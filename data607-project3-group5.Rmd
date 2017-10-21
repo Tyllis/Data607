@@ -481,3 +481,11 @@ Again, this agrees largely with the indeed.com dataset. In fact, both datasets a
 
 
 ### Conclusion
+
+Using the aforementioned datasets, we were able to determine the current, shared consensus on the most valued skills, both "hard" and "soft", that a data scientist should have in today's corporate environment. By breaking out the demand (refer to our analysis of each dataset) with our web scrapping, data aggregation, parsing, and analysis techniques we were able to see that the job site datasets and the college datasets were relatively in line with each other for the most valued skills and traits. This is indicative of a industry movement towards universally accepted characteristics and abilities for the data science career path. This of course can be subject to major industry shifts as the field as a whole is still in the early stages of development. 
+
+With regards to soft skills, attributes such as experience, social, organization, and communication consistently rank at the very top of what employers are looking for.
+
+With regards to hard skills, the top three most valued skills were `r cc_top20$skills[20]`, `r cc_top20$skills[19]`, and `r cc_top20$skills[18]`.
+
+Knowing this information, students can now aim to refine their skill sets to be the best data scientists that they can be per the desired industry standard.
