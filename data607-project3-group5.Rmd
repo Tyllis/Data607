@@ -479,6 +479,13 @@ The college homepages datatsets suggest that the top 5 most valuable soft skills
 
 Again, this agrees largely with the indeed.com dataset. In fact, both datasets agree exactly on the top 6 most valuable skills. Attributes such as experience, social, organization, and communication rank consistently at the very top of what employers are looking for. 
 
+This is particularly interesting because, as explained in the Methodology section above, the strategy we deployed for the soft skills is a simple key word search in the raw html codes downloaded from the websites. This brute force strategy is simple but it has a flaw: the word search does not take context into consideration. The words may appear in the website but do not mean to describe the soft skills for data scientist. Our hope was that the chance of this occurrence is not the norm and low, and by processing large amount of data, we may be still able to find something of interests. The results above show clearly that there is indeed a ranking order for these soft skills in terms of values. Its could mean one of the following two things:
+
+1. that we have truely captured the underlying ranking order for soft skills.
+2. that certain words are more susceptible to be captured out of context than others.
+
+We tend to believe in the former because there is no evidence to believe in the later. Going forward, it may be possible to create some sorts of hypothesis test to test the later conclusion; or better yet, devise a more sophisticated technique to extract those soft skills from the websites (for example, a machine learning program that does take context into account when extracting words).  Considering the extent of the knowledge we currently have in web scrapping, the above results should suffice the scope of the project. 
+
 
 ### Conclusion
 
