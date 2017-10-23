@@ -1,12 +1,17 @@
 ---
 title: "DATA 607 Project 3"
 author: "Jun Yan, Hector Santana, Rafal Decowski, Chad Smith, Aryeh Sturm"
-date: "October 19, 2017"
-output: 
+date: "October 22, 2017"
+output:
+  prettydoc::html_pretty:
+    highlight: github
+    theme: caymen
+    toc: yes
+    toc_depth: 5
   html_document:
     toc: yes
     toc_float: yes
-    toc_depth: 4
+    toc_depth: '5'
 ---
 
 ### Introduction
@@ -130,7 +135,7 @@ indeed_hardskills <- unlist(unique(indeed_hardskills))
 write.csv(indeed_hardskills, file ="indeed_hardskills.csv", row.names=FALSE)
 ```
 
-The result is saved and resides in this github repository: https://raw.githubusercontent.com/Tyllis/Data607/master/indeed_hardskills.csv
+The result is a dataset with 2,082 rows for the 2,082 data scientist jobs found on indeed.com and one column containing the experience or skills required for the jobs. The dataset requires some tidying. We will save that step in the Analysis section below. The data was saved and resides in this github repository: https://raw.githubusercontent.com/Tyllis/Data607/master/indeed_hardskills.csv
 
 
 #### Scraping Cybercoders.com
@@ -159,7 +164,7 @@ scrape_cyber_coders <- function(){
 Scrape_cyber_coders()
 ```
 
-The result is saved and resides in this github repository: https://raw.githubusercontent.com/Tyllis/Data607/master/cybercoders_hardskills.csv
+The above function also took care of the data tidying task as well as aggregation. The result is a dataset with 146 rows corresponding to 146 hard skills appeared on the websites. There are two columns. One column contains the hard skills, and the other column contains how many times the skills are needed in the websites, i.e. frequency. The file was saved and resides in this github repository: https://raw.githubusercontent.com/Tyllis/Data607/master/cybercoders_hardskills.csv
 
 
 #### Scrapping Indeed.com for Soft Skills
@@ -232,7 +237,7 @@ indeed_softskills <- data.frame(joblinks[1:500], soft_skills = result)
 write.csv(indeed_softskills, file ="indeed_softskills", row.names=FALSE)
 ```
 
-This is stored at this github repository: https://raw.githubusercontent.com/Tyllis/Data607/master/indeed_softskills.csv
+The result is a data.frame object with 500 rows for the 500 job link we scrapped. It has two columns, one containing the URLs of the job links, and the other column containing the hard skills. The dataset requires few more tidying steps and we will do that in the Analysis section below. The data is stored in this github repository: https://raw.githubusercontent.com/Tyllis/Data607/master/indeed_softskills.csv
 
 
 #### Scrapping College Homepages
@@ -266,7 +271,7 @@ for (htmlcodes in homepages){
 write.csv(dscolleges, file ="college_softskills", row.names=FALSE)
 ```
 
-The file is stored in the following github repository: https://raw.githubusercontent.com/Tyllis/Data607/master/college_softskills.csv
+The resulting data.frame object was just the original college table with one additional column - the "skills" column, which contains the soft skills found on those websites. The data file is stored in the following github repository: https://raw.githubusercontent.com/Tyllis/Data607/master/college_softskills.csv
 
 
 ### Analysis of Results
