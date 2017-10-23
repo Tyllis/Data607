@@ -3,12 +3,8 @@ title: "DATA 607 Project 3"
 author: "Jun Yan, Hector Santana, Rafal Decowski, Chad Smith, Aryeh Sturm"
 date: "October 22, 2017"
 output:
-  prettydoc::html_pretty:
-    highlight: github
-    theme: caymen
-    toc: yes
-    toc_depth: 5
   html_document:
+    theme: readable
     toc: yes
     toc_float: yes
     toc_depth: '5'
