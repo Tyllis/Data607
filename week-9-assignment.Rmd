@@ -1,0 +1,131 @@
+---
+title: "DATA607 Week 9 Assignment"
+author: "Jun Yan"
+date: "October 22, 2017"
+output:
+  prettydoc::html_pretty:
+    df_print: paged
+    theme: cayman
+    toc: yes
+    toc_depth: 5
+  html_document:
+    df_print: paged
+    toc: yes
+    toc_depth: '5'
+    toc_float: yes
+---
+
+### Starting Up
+
+I used following packages for this assignment:
+
+```{r warning=F, message=F}
+library(httr)
+library(tidyr)
+library(plyr)
+```
+
+I applied and obtained a NY Times API key. The key was saved in the system environment using `Sys.setenv()` function, which can be retrieved using `Sys.getenv("nytimes_apikey")`.  For this assignment, I am interested in the top_stories API. My goal is to collect all data from the sections in top_stories to create a data.frame object through the API.
+
+
+### Wrapping Function for JSON List
+
+Before I started grabbing data from the NY Times API, I first built a function that can help me process the JSON files. From the last assignment, I noticed there are some common steps that can be wrapped in one function.
+
+Below function takes a json list object and perform transformation to turn it into a data.frame object. This will be handy when I need to process the json file.
+
+```{r}
+readNYTimesApi <- function(jsonlist){
+  jsonlist %>%  
+  lapply(unlist) %>%       # Unlist each list elements inside the jsonlist  
+  lapply(t) %>%            # Transpose each vector element to row element
+  lapply(data.frame, stringsAsFactor=F) %>%  # Turn row element into data.frame 
+  do.call(rbind.fill, .)   # Bind elements together row-wise.
+}
+```
+
+### Top Stories 
+
+The API documentation for the NY Times top_stories is here: http://developer.nytimes.com/top_stories_v2.json#/Documentation/GET/%7Bsection%7D.%7Bformat%7D. 
+
+The documentation explains that the url for the GET function should be in this format: /{section}.{format}, where the "format" should be .json and "section" can include the any of the following: "home, opinion, world, national, politics, upshot, nyregion, business, technology, science, health, sports, arts, books, movies,theater, sundayreview, fashion, tmagazine, food, travel, magazine, realestate, automobiles, obituaries, insider".
+
+```{r}
+sections <- "home, opinion, world, national, politics, upshot, nyregion, business, technology, science, health, sports, arts, books, movies, theater, sundayreview, fashion, tmagazine, food, travel, magazine, realestate, automobiles, obituaries, insider" %>% 
+  strsplit(split=", ") %>% 
+  unlist()
+```
+
+Below codes construct a vector containing the query strings for all of the `sections`.
+
+```{r}
+topstories <- "https://api.nytimes.com/svc/topstories/v2/"
+urls <- paste(topstories, sections, ".json?",sep="")
+urls
+```
+
+This includes all `r length(urls)` sections in top_stories. 
+
+Below codes will try to grab all the top stories in these sections, using two `lapply` to pipe the `GET` and `content` function together. 
+
+```{r eval=F}
+nytimes <- urls %>% 
+  lapply(GET, add_headers("api-key"=Sys.getenv("nytimes_apikey"))) %>% 
+  lapply(content, "parse")
+```
+
+However, I found that this will not work. Took me some times to find out why. It turns out that the NY Times API server imposes a rate limit of 1,000 calls per day, 5 calls per second. When I tried to use `lapply`, the computer made the `GET` calls too quickly and was exceeding the 5 calls per second limit. So I would get results for the first few calls and then would get rejected for the rest. 
+
+To resolve this issue, I had to use a for-loop and imposed a time suspension inside the loop using `Sys.sleep` function.
+
+```{r}
+nytimes <- list()
+for (i in 1:length(urls)){
+  Sys.sleep(0.1)
+  nytimes[[i]] <- GET(urls[i], add_headers("api-key"=Sys.getenv("nytimes_apikey")))
+}
+(num_lst <- length(nytimes))
+```
+
+This will pause the `GET` call every time for 1/10 of a second, so that I don't go over the limit. I was able to successfully execute all `r num_lst` `GET` calls. I can now parse the json object to lists using `content` function.
+
+```{r warning=F, message=F}
+nytimes <- lapply(nytimes, content, "parse")
+```
+
+The result is a list containing `r num_lst` elements. Each element corresponds to a section in the top_stories API and is a list itself.  
+
+
+### Exploring The List
+
+Let's see what are the contents of these lists:
+
+```{r}
+lapply(nytimes, names)
+```
+
+So they all have the same structure. I'm particularly interested in the "results" element. Let's apply the `readNYTimesApi` functions created above to see the contents for one of the section.
+
+```{r cols.print=5, rows.print=10}
+temp <- nytimes[[1]]$results
+temp <- readNYTimesApi(temp)
+temp
+```
+
+Yes. This is exactly what I was looking for. It is a data.frame object containing all necessary information for the top stories in this section.
+
+
+### Compile All Top News
+
+I now parse all the `r num_lst` elements and construct a big data.frame object, which contains top news covering all `r num_lst` sections.
+
+```{r cols.print=5, rows.print=20}
+alltopstories <- nytimes %>% 
+  lapply("[[", "results") %>%  # Grab the "results" element of each element
+  lapply(readNYTimesApi) %>%   # Apply the readNYTimesApi function to each element
+  do.call(rbind.fill, .)       # Bind elements together row-wise
+write.csv(alltopstories, "alltopstories.csv", row.names = F)
+alltopstories
+```
+
+The csv file can be found here: https://raw.githubusercontent.com/Tyllis/Data607/master/alltopstories.csv
