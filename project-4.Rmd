@@ -1,0 +1,414 @@
+---
+title: "DATA607 Project-4"
+author: "Jun Yan"
+date: "November 4, 2017"
+output: 
+  html_document:
+    toc: yes
+    toc_float: yes
+    tod_level: 4
+---
+
+### Starting Up
+
+In this project, I intended to train the computer to classify documents being spam or ham (not spam), using two datasets from Spamassassin and CSMining respectively. The publicly available files can be found here: 
+
+- Spamassassin: http://spamassassin.apache.org/old/publiccorpus/.
+- CSMing: http://csmining.org/index.php/spam-email-datasets-.html.
+
+In the Spamassassin dataset, there are 10,751 email documents, seperated into 9 compressed folders. The folder names identified whether the files are spam or ham. After removing duplicate files, I obtained 6952 ham and 2398 spam files, for a total of `r 6952+2398` files. 
+
+In the CSMining dataset, there are two sets of data, the "TESTING" set and the "TRAINING" set. In this project, I used the training set since the testing set has no labels. The training set contains 4327 message documents, of which 2949 are ham and 1,78 are spam, as described in its documentation. A file named "SPAMTrain.label" contains the labels for these files. 
+
+Following packages were used in this project:
+
+```{r message=F, warning=F}
+require(tm)
+require(stringr)
+require(dplyr)
+require(SnowballC)
+require(RTextTools)
+```
+
+Note that I used `RTextTools` package for the model training and classifying. As the date of this project, this package is no longer being maintained. However, most functions were still usable. I used and tested three classification algorithms in this project:
+
+- Support Vector Machine ("SVM")
+- Random Forest ("TREE")
+- Maximum Entropy ("MAXENT")
+
+
+#### Wrapper Functions
+
+Three functions were written to wrap the common tasks together:
+
+- `toVCorpus`: This function takes a file path as an input, and turn all the ham/spam files in the file path into VCorpus object. It returns a VCorpus object.
+- `docClean`: This function takes a corpus as an input, and performs a number of document cleaning tasks using tm_map. It returns a VCorpus object. 
+- `addTag`: This function takes a corpus and add tags to the corpus' meta. It is used to add the "ham" or "spam" tag to the entire corpus.
+
+```{r}
+toVCorpus <- function(file_path) {
+  corpus <- file_path %>%                            
+    paste(., list.files(.), sep = "/") %>%          # Create a vector of file paths 
+    lapply(readLines) %>%                           # Read the text in each file
+    VectorSource() %>%                              # Turn into VectorSource
+    VCorpus()                                       # Turn into VCorpus
+  return(corpus)
+}
+```
+```{r}
+docClean <- function(corpus) {
+  corpus <- corpus %>%
+    tm_map(removeNumbers) %>%   				            # Remove numbers
+    tm_map(str_replace_all, "[[:punct:]]", " ") %>% # Remove punctuations 
+    tm_map(tolower) %>%  	 				                  # Remove upper cases
+    tm_map(PlainTextDocument) %>%				            # Transform back to PlainTextDocument
+    tm_map(removeWords, stopwords("en")) %>%        # Remove stop words
+    tm_map(stemDocument)					                  # Reduce to stems
+  return(corpus)
+}
+```
+```{r}
+addTag <- function(corpus, tag, value){
+  for (i in 1:length(corpus)){
+    meta(corpus[[i]], tag) <- value                    # Add the value to the specified tag
+  }
+  return(corpus)
+}
+```
+
+
+### Spamassassin Dataset
+
+The 9 folders were decompressed and copied into two folders, one containing the "ham" and the other containing the "spam". I found out that there were some duplicated files in the original raw dataset. After removing the duplicates, I obtained 6,952 ham and 2,398 spam files, for a total of `r 6952+2398` files. 
+
+
+#### Document Loading
+
+Below, I created the ham corpus and spam corpuses, using `lapply` to apply the 3 wrapper functions. Note that the "ham" or "spam" tags were added to the two corpuses in this stage.
+
+```{r warning=F, message=F}
+ham_paths <- "spamassassin/ham"
+spam_paths <- "spamassassin/spam"
+
+# Create ham corpus
+ham_corpus <- ham_paths %>%
+  toVCorpus %>%
+  docClean %>%
+  addTag(tag = "ham_spam", value = "ham")
+
+# Create spam corpus
+spam_corpus <- spam_paths %>%
+  toVCorpus %>%
+  docClean %>%
+  addTag(tag = "ham_spam", value = "spam")
+```
+
+The two corpuses can now be joined together, using  `c` function.
+
+```{r}
+# Join the corpuses
+spamassassin_corpus <- c(ham_corpus, spam_corpus)
+```
+
+I also scrambled the orders inside the corpus, so that ham and spam are randomly located within the corpus.
+
+```{r}
+# Scramble the order
+spamassassin_corpus <- spamassassin_corpus[sample(c(1:length(spamassassin_corpus)))]
+```
+
+Let's check the corpus:
+
+```{r}
+# Check ham/spam proportion
+spamassassin_corpus_prop <- spamassassin_corpus %>%
+  meta(tag = "ham_spam") %>%
+  unlist() %>%
+  table() 
+spamassassin_corpus_prop
+```
+
+Thus, there are `r spamassassin_corpus_prop[1]` ham files and `r spamassassin_corpus_prop[2]` spam files, adding to a total of `r sum(spamassassin_corpus_prop)` files. This checked out with what we have in the file folders.
+
+
+#### Training
+
+Here, I created the document term matrix, and removed the sparse terms. Terms appearing in less than 10 documents were removed. I also retreived the "ham" or "spam" labels from the corpus:
+
+```{r}
+spamassassin_dtm <- spamassassin_corpus %>% 
+  DocumentTermMatrix() %>% 
+  removeSparseTerms(1-(10/length(spamassassin_corpus)))
+spamassassin_labels <- unlist(meta(spamassassin_corpus, "ham_spam"))
+```
+
+In order to use the `train_model` function, I had to create a container. Here, I also did a 80/20 split in the dataset. About 80% of the data were used for training, and the remaining 20% were used for testing.
+
+```{r}
+N <- length(spamassassin_labels)
+split <- round(0.8*N) 
+container <- create_container(
+  spamassassin_dtm, 
+  labels = spamassassin_labels, 
+  trainSize = 1:split,
+  testSize = (split+1):N,
+  virgin = F
+)
+```
+
+Begin training:
+
+```{r message=F, warning=F}
+svm_model_spamassassin <- train_model(container, "SVM")
+tree_model_spamassassin <- train_model(container, "TREE")
+maxent_model_spamassassin <- train_model(container, "MAXENT")
+```
+
+
+#### Testing
+
+Let's run the test and see the results from the three models:
+
+```{r}
+# Classifying using the trained models
+svm_out_spamassassin <- classify_model(container, svm_model_spamassassin)
+tree_out_spamassassin <- classify_model(container, tree_model_spamassassin)
+maxent_out_spamassassin <- classify_model(container, maxent_model_spamassassin)
+
+# Collect the classification results into a table
+labels_out_spamassassin <- data.frame(
+  correct_label = spamassassin_labels[(split+1):N],
+  svm = as.character(svm_out_spamassassin[,1]),
+  tree = as.character(tree_out_spamassassin[,1]),
+  maxent = as.character(maxent_out_spamassassin[,1]))
+
+# Print results
+for (i in 2:4){
+  print(names(labels_out_spamassassin)[i])
+  table(labels_out_spamassassin[,1] == labels_out_spamassassin[,i]) %>% 
+    print() %>% 
+    prop.table() %>% 
+    round(2) %>% 
+    print()
+}
+```
+
+As you can see, the three classfication algorithm perform equally well.
+
+
+### CSMining Dataset
+
+
+#### Document Loading
+
+First load the files into VCorpus, and clean the documents:
+
+```{r warning=F, message=F}
+csmining_corpus <- "csmining/TRAINING" %>% 
+  toVCorpus() %>% 
+  docClean() 
+```
+
+Below, I retrieved the ham/spam labels from the "SPAMTrain.label" file, and added the labels to the "ham_spam" tag in the corpus.
+
+```{r}
+csmining_labels <- "csmining/SPAMTrain.label" %>% 
+  readLines() %>% 
+  str_extract("[0|1]") %>% 
+  str_replace("0", "spam") %>% 
+  str_replace("1", "ham")
+
+for (i in 1:length(csmining_corpus)){
+  meta(csmining_corpus[[i]], "ham_spam") <- csmining_labels[i]
+}
+```
+
+Let's check the resulting corpus.
+
+```{r}
+# Check ham/spam proportion
+csmining_corpus_prop <- csmining_corpus %>%
+  meta(tag = "ham_spam") %>%
+  unlist() %>%
+  table() 
+csmining_corpus_prop
+```
+
+There are `r csmining_corpus_prop[1]` ham files and `r csmining_corpus_prop[2]` spam files, adding to a total of `r sum(csmining_corpus_prop)` files. This checked out with what we have in the file folders, as mentioned in the beginning.
+
+
+#### Training
+
+Create the container, and split the corpus 80/20, as well as removing the sparse terms: 
+
+```{r}
+csmining_dtm <- csmining_corpus %>% 
+  DocumentTermMatrix() %>% 
+  removeSparseTerms(1-(10/length(csmining_corpus)))
+N <- length(csmining_labels)
+split <- round(0.8*N) 
+container <- create_container(
+  csmining_dtm, 
+  labels = csmining_labels, 
+  trainSize = 1:split,
+  testSize = (split+1):N,
+  virgin = F
+)
+```
+
+Begin training:
+
+```{r warning=F, message=F}
+svm_model_csmining <- train_model(container, "SVM")
+tree_model_csmining <- train_model(container, "TREE")
+maxent_model_csmining <- train_model(container, "MAXENT")
+```
+
+
+#### Testing
+
+Similarly, I tested the models as following:
+
+```{r}
+svm_out_csmining <- classify_model(container, svm_model_csmining)
+tree_out_csmining <- classify_model(container, tree_model_csmining)
+maxent_out_csmining <- classify_model(container, maxent_model_csmining)
+
+labels_out_csmining <- data.frame(
+  correct_label = csmining_labels[(split+1):N],
+  svm = as.character(svm_out_csmining[,1]),
+  tree = as.character(tree_out_csmining[,1]),
+  maxent = as.character(maxent_out_csmining[,1]))
+
+for (i in 2:4){
+  print(names(labels_out_csmining)[i])
+  table(labels_out_csmining[,1] == labels_out_csmining[,i]) %>% 
+    print() %>% 
+    prop.table() %>% 
+    round(2) %>% 
+    print()
+}
+```
+
+Again, the three classifiers performed equally well.
+
+
+### Cross Testing
+
+Lastly, I'm interested in testing the models trained from one dataset on the other dataset, i.e. using models trained with the Spamassassin dataset to classify the CSMining dataset and vise versa. 
+
+
+#### Wrapper Function
+
+First, I created a wrapper function `run_test`. The function takes 4 inputs:
+
+- training corpus
+- training labels
+- testing corpus
+- testing labels
+
+The function returns a data.frame object. Each row of the data.frame is a case being classified. The first column contains the correct labels. The second, third, and fourth columns contain the classification results of the SVM, tree, and Maxent models, respectively.
+
+For example, if the training set is the Spamassassin corpus and testing set is the CSMining corpus, the model will use all of the `r sum(spamassassin_corpus_prop)` corpuses in the Spamassassin to train the model, and use it to predict all of the `r sum(csmining_corpus_prop)` corpuses in CSMining, and vise versa.
+
+```{r}
+run_test <- function(training_corpus, training_labels, testing_corpus, testing_labels){
+  
+  all_labels <- c(training_labels, testing_labels)
+  N <- length(all_labels)
+  all_dtm <- c(training_corpus, testing_corpus) %>% 
+    DocumentTermMatrix() %>% 
+    removeSparseTerms(1-(10/N))
+  
+  split <- length(training_corpus)
+  container <- create_container(
+    all_dtm, 
+    labels = all_labels, 
+    trainSize = 1:split,
+    testSize = (split+1):N,
+    virgin = F
+  )
+  
+  svm_model <- train_model(container, "SVM")
+  tree_model <- train_model(container, "TREE")
+  maxent_model <- train_model(container, "MAXENT")
+  print("models training completed.")
+  
+  svm_out <- classify_model(container, svm_model)
+  tree_out <- classify_model(container, tree_model)
+  maxent_out <- classify_model(container, maxent_model)
+  
+  all_out <- data.frame(
+    correct_label = all_labels[(split+1):N],
+    svm = as.character(svm_out[,1]),
+    tree = as.character(tree_out[,1]),
+    maxent = as.character(maxent_out[,1]))
+  all_out$svm_compare <- all_out$correct_label == all_out$svm
+  all_out$tree_compare <- all_out$correct_label == all_out$tree
+  all_out$maxent_compare <- all_out$correct_label == all_out$maxent
+  
+  return(all_out)
+}
+```
+
+Another function `run_analysis` was created to summarize the results. The function takes the data.frame object producted by the `run_test` function, and creates a list containing three elements. The first element is a table summarizing the results, showing overall proportion of incorrect and correct classification. The second element is a summarizing table for the spam classficiation, and the third element is for the ham classfication.
+
+```{r}
+run_analysis <- function(data_table){
+  spam_table <- filter(data_table, correct_label == "spam")
+  ham_table <- filter(data_table, correct_label == "ham")
+  all_table <- list(data_table, spam_table, ham_table)
+  temp_list <- list()
+  for (i in 1:3){
+    temp <- list()
+    for (j in 1:3){
+      temp[[j]] <- all_table[[i]][,4+j] %>% 
+        table() %>% 
+        prop.table() %>% 
+        round(2) %>% 
+        t()
+    }
+    temp <- do.call(rbind, temp)
+    rownames(temp) <- c("SVM", "TREE", "MAXENT")
+    colnames(temp) <- c("Incorrect", "Correct")
+    temp_list[[i]] <- temp
+  }
+  return(temp_list)
+}
+```
+
+First element is a data.frame object where each row is a case, one column containing the correct label, and the remaining column contains the classification results. The second element is a table summarizing the results, showing overall proportion of incorrect and correct classification. The third element is a summarizing table for the spam classficiation, and the fourth element is for the ham classfication.
+
+
+#### Testing Models
+
+In the first test, I trained the models using all Spamassassin corpus, and used the models to classify the CSMining corpus:
+
+```{r}
+spamassassin_trained <- run_test(spamassassin_corpus, spamassassin_labels, csmining_corpus, csmining_labels)
+head(spamassassin_trained)
+dim(spamassassin_trained)[1]
+```
+
+The number of cases checked out. The CSMining corpus indeed has `r dim(spamassassin_trained)[1]` cases as mentioned in the beginning.
+
+In the second test, I did the reverse - training using CSMining data to classify the Spamassassin data:
+
+```{r}
+csmining_trained <- run_test(csmining_corpus, csmining_labels, spamassassin_corpus, spamassassin_labels)
+head(csmining_trained)
+dim(csmining_trained)[1]
+```
+
+Again the number of cases checked out.
+
+Let's compare the overall classfication performance summary:
+
+```{r}
+spamassassin_tables <- run_analysis(spamassassin_trained)
+csmining_tables <- run_analysis(csmining_trianed)
+spamassasin_tables[[1]]
+csmining_tables[[1]]
+```
+
+Interestingly, the `csmining_trained` models performed much better than the `spamassassin_trained` models; despite the fact that CSMining had less than half amount of corpuses to train with, compared with the Spamassassin dataset (`r dim(spamassassin_trained)[1]` training size vs `r dim(csmining_trained)[1]` training size). However, the `csmining_trained` models were also classifying less than half of what the `spamassassin_trained` models did. Was the different due to pure random chances? Or was there someting intrinsicly different between the datasets? These are all interesting questions, but for now, they are topics for another project in another day.   
