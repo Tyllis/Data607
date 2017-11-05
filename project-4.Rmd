@@ -193,7 +193,7 @@ for (i in 2:4){
 }
 ```
 
-As you can see, the three classfication algorithm perform equally well.
+As you can see, the three classfication algorithm performed pretty well. The svm and maxent classifiers were 99% accurate.
 
 
 ### CSMining Dataset
@@ -290,7 +290,7 @@ for (i in 2:4){
 }
 ```
 
-Again, the three classifiers performed equally well.
+Again, the three classifiers performed well. The svm and maxent classifiers, again, achieved 99% accuracy. 
 
 
 ### Cross Testing
@@ -332,7 +332,6 @@ run_test <- function(training_corpus, training_labels, testing_corpus, testing_l
   svm_model <- train_model(container, "SVM")
   tree_model <- train_model(container, "TREE")
   maxent_model <- train_model(container, "MAXENT")
-  print("models training completed.")
   
   svm_out <- classify_model(container, svm_model)
   tree_out <- classify_model(container, tree_model)
@@ -406,9 +405,25 @@ Let's compare the overall classfication performance summary:
 
 ```{r}
 spamassassin_tables <- run_analysis(spamassassin_trained)
-csmining_tables <- run_analysis(csmining_trianed)
-spamassasin_tables[[1]]
+csmining_tables <- run_analysis(csmining_trained)
+spamassassin_tables[[1]]
 csmining_tables[[1]]
 ```
 
-Interestingly, the `csmining_trained` models performed much better than the `spamassassin_trained` models; despite the fact that CSMining had less than half amount of corpuses to train with, compared with the Spamassassin dataset (`r dim(spamassassin_trained)[1]` training size vs `r dim(csmining_trained)[1]` training size). However, the `csmining_trained` models were also classifying less than half of what the `spamassassin_trained` models did. Was the different due to pure random chances? Or was there someting intrinsicly different between the datasets? These are all interesting questions, but for now, they are topics for another project in another day.   
+Interestingly, the `csmining_trained` models performed much better than the `spamassassin_trained` models; despite the fact that CSMining had less than half amount of corpuses to train with, compared with the Spamassassin dataset (`r dim(spamassassin_trained)[1]` training size vs `r dim(csmining_trained)[1]` training size). However, the `csmining_trained` models were also classifying less than half of what the `spamassassin_trained` models did. Was the different due to pure random chances? Or was there something intrinsically different between the datasets? 
+
+Note that the CSMining dataset was collected between 2009 and 2010, while the Spamassassin data was more dated, collected between 2002 and 2005. Would it be that the spammers had gotten smarter, such that models trained by dated data cannot accurately classify spams from later date? 
+
+These are all interesting questions, but for now, they are topics for another project in another day. As a final note, below are the performance for the spam classifications. The `Incorrect` column is the proportion of incorrect classfications, ie. the email was a spam but the classifier classified it as ham. Notice that the SVM and Maxent models trained with Spamassassin data performed much worse in classifying spams. 
+
+```{r}
+spamassassin_tables[[2]]
+csmining_tables[[2]]
+```
+
+And for the ham classificaitons:
+
+```{r}
+spamassassin_tables[[3]]
+csmining_tables[[3]]
+```
