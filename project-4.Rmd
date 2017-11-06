@@ -376,8 +376,6 @@ run_analysis <- function(data_table){
 }
 ```
 
-First element is a data.frame object where each row is a case, one column containing the correct label, and the remaining column contains the classification results. The second element is a table summarizing the results, showing overall proportion of incorrect and correct classification. The third element is a summarizing table for the spam classficiation, and the fourth element is for the ham classfication.
-
 
 #### Testing Models
 
