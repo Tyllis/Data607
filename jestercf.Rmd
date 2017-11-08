@@ -51,7 +51,7 @@ The rating system on Jester is kind of one dimensional. The users are asked only
 
 In essence, it uses the response variable (i.e. the "funny meter") to perform collaborative filtering. 
 
-But jokes have more dimensions to explore. "General Theory of Verbal Humor" https://en.wikipedia.org/wiki/Joke#Classification_systems layed out six levels of jokes in general. Quoting from expedia.com:
+But jokes have more dimensions to explore. "General Theory of Verbal Humor" https://en.wikipedia.org/wiki/Joke#Classification_systems layed out six levels of jokes in general. Quoting from wikipedia:
 
 1. Script Opposition (SO) This includes, among others, themes such as real (unreal), actual (non-actual), normal (abnormal), possible (impossible).
 2. Logical Mechanism (LM) refers to the mechanism which connects the different scripts in the joke. These can range from a simple verbal technique like a pun to more complex LMs such as faulty logic or false analogies.
