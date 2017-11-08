@@ -1,0 +1,207 @@
+---
+title: "Jester - Collaborative Filtering"
+author: "Jun Yan"
+date: "November 7, 2017"
+output: 
+  html_document:
+    toc: yes
+---
+
+## Starting Up
+
+The ppt slides explaining the background behind the data set and collaborative filtering methods can be found here:
+
+https://raw.githubusercontent.com/Tyllis/Data607/master/jester-collaborative-filtering.pptx
+
+Load the packages and the file into R.
+
+```{r message=F, warning=F}
+library(dplyr)
+library(knitr)
+theURL <- "https://raw.githubusercontent.com/Tyllis/Data607/master/jester-data-1.csv"
+jester <- read.csv(theURL, header = F, stringsAsFactors = F)
+```
+
+## Data Preparation
+
+Save the 1st column in `num_rate`, then removed it from the data.
+
+```{r}
+# Save 1st column
+num_rate <- jester[,1]   
+# Remove 1st column
+jester <- jester[,-1]
+```
+
+Inspect the data:
+
+```{r}
+# Check dimension
+dim(jester)
+num_row <- dim(jester)[1]
+num_col <- dim(jester)[2]
+# Rename rows and columns
+names(jester) <- c(1:num_col)
+row.names(jester) <- c(1:num_row)
+# Show portion of data
+kable(jester[1:10,1:15])
+```
+
+Replace all the value "99" by "NA"
+
+```{r}
+# Replace all value 99 by NA
+jester <- as.data.frame(apply(jester, 2, function(x) replace(x, x==99, NA)))
+```
+
+Save the indices of NA. The result is a list containing `r num_row` row elements, each element contains the column indices of NA.
+
+```{r}
+# Save indices of NA
+na_idx <- apply(jester, 1, function(x) which(is.na(x)))
+```
+
+## Create Similarity Matrix
+
+Next, create several helper functions.
+
+```{r}
+# This function takes a vector and returns the magnitude of the vector.
+mag <- function(x) sqrt(sum(x^2, na.rm=T))
+
+# This function takes two vectors and returns the dot product of the two vectors.
+dot <- function(x,y) sum(x*y, na.rm=T)
+
+# This function takes two vectors and returns the cosine of the angles between the two vectors
+cosine <- function(x,y) dot(x,y)/ (mag(x)*mag(y))
+
+# Function that takes a vector and subtract the mean from each vector element.
+center <- function(x) x-mean(x, na.rm=T)
+
+# Function that takes two vectors and return the similarity of the vectors.
+sim <- function(x,y) cosine(center(x), center(y))
+```
+
+Using the above helper functions, we can create the similarity matrix.
+
+```{r}
+# Create similarity matrix
+sim_mat <- c()
+for (col in 1:num_col){
+  sim_mat <- rbind(sim_mat, apply(jester, 2, sim, jester[,col]))
+}
+```
+
+The result is a matrix `sim_mat`. Each row contains the similarities vector. 
+
+For example, the similarity between Joke #19 and Joke #66 is stored in row 19 col 66.
+
+```{r}
+# Check sim_mat[19,66]
+sim(jester[,19], jester[,66]) == sim_mat[19,66]
+```
+
+Below code picks a pair of random jokes and check if the `sim_mat` stores the similarity value correctly.
+
+```{r}
+# Check a pair of random jokes
+random_jokes <- sample(1:num_col, size=2)
+joke1 <- random_jokes[1]
+joke2 <- random_jokes[2]
+print(paste(joke1, joke2))
+sim(jester[,joke1], jester[,joke2])
+sim_mat[joke1,joke2]
+```
+
+Also, another check is that the similarity matrix should be symmetric, meaning that sim_mat[i,j] = sim_mat[j,i]
+
+```{r}
+# Check symetric
+sim_mat[joke1, joke2] == sim_mat[joke2, joke1]
+```
+
+Lastly, the diagonal of the similarity matrix should be all ones, because the similarity between each joke and itself should be 1. 
+
+```{r}
+# Check diagnal of similiarity matrix
+diag(sim_mat)
+```
+
+Check a portion of the matrix.
+
+```{r}
+# Inspect the similarity matrix
+dim(sim_mat)
+kable(sim_mat[1:10,1:15], digits = 3)
+```
+
+## Neighborhood and Weighted Mean
+
+Create a function that can search for the N-neighbors for a selected joke. The function takes three values:
+
+- x = a vector containing the similarity values. This vector can be retrieved from `sim_mat` by calling `sim_mat[jokeID, ]`. 
+- i = a vector containing the indices to exclude from the search. This vector is the indices of the jokes the user never rate before. This vector can be retrieved from `na_idx` created earlier, by calling `na_idx[[userID]]`. 
+- n = a integer indicating how many neighbors to look for.
+
+```{r}
+# Function that takes a similarity vector x and a integer n and returns the top n neighbors but excluding the indices in the vector i. It returns a vector containing the similarity values, and the names of the vector are their indices.
+n_neighbor <- function(x, i, n){
+  # If na_idx is not empty, remove the indices from vector x
+  if(length(na_idx[[i]])!=0) x=x[-na_idx[[i]]]
+  # Sort x indecreasing order, take the top n+1, but remove the first one becaues the first one is always 1. 
+  head(sort(x, decreasing = T), n+1)[-1]
+} 
+```
+
+Create a function that calculates the weighted mean. The function will perform the following task:
+
+- Given the userID, jokeID, and n, look for the n-neighbors of the joke relevant to the user
+- Retrieve the similarity values of the n-neighbors of the joke
+- Retrieve the rating values of the n-neighbors of the joke that the user had rated
+- Calculate the weighted mean.
+
+```{r}
+# Function that takes a jokeID and a userID and estimate a rating based on collaborating filtering
+cal_rating <- function(userID, jokeID, n){
+  # look for n-neighbors
+  neighbors <- n_neighbor(sim_mat[jokeID,], userID, n)  
+  # retrieve the column indices of the neighbors
+  idx <- as.integer(names(neighbors))
+  # retrieve the rating values of the joke neighbors
+  val <- jester[userID, idx]
+  # calculate weighted mean
+  weighted.mean(val, neighbors)
+}
+```
+
+## Execution
+
+Now it is ready to fill in the "NA" cells in the `jester` table. A nested for-loop implementation is used here, although a vectorized implementation may be possible. I also saved the predicted ratings separately in a list `predict_ratings`.
+
+```{r}
+jester_cf <- jester
+predict_ratings <- list()
+for (i in 1:num_row){
+  temp <- c()
+  if (length(na_idx[[i]])!=0){ 
+    for (j in na_idx[[i]]){
+      val <- cal_rating(i,j,5)
+      jester_cf[i,j] <- val
+      temp <- c(temp, val)
+    }
+    names(temp) <- na_idx[[i]]
+  }
+  predict_ratings[[i]] <- temp
+}
+```
+
+Let's see portion of the data.
+
+```{r}
+# Inspect portion of data
+kable(jester_cf[1:10,1:15], digits = 2)
+```
+
+The complete result can be found here:
+
+https://raw.githubusercontent.com/Tyllis/Data607/master/jester_cf.csv
