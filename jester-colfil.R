@@ -53,8 +53,7 @@ cal_rating <- function(userID, jokeID, n){
   weighted.mean(val, neighbors)
 }
 
-num_row <- 100
-
+b <- proc.time()
 jester_cf <- jester
 predict_ratings <- list()
 for (i in 1:num_row){
@@ -63,15 +62,35 @@ for (i in 1:num_row){
   if (length(na_idx[[i]])!=0){ 
     for (j in na_idx[[i]]){
       val <- cal_rating(i,j,5)
-      jester_cf[i,j] <- as.character(val)
+      jester_cf[i,j] <- val
       temp <- c(temp, val)
     }
     names(temp) <- na_idx[[i]]
   }
   predict_ratings[[i]] <- temp
 }
+e <- proc.time()
+e-b
 
+write.csv(jester_cf, "C:\\Users\\jun.yan\\Desktop\\Course\\jester\\jester_cf.csv")
 
-write.csv(jester, "C:/Users/junya/Desktop/DATA607/jester/jester.csv")
-write.csv(jester_cf, "C:/Users/junya/Desktop/DATA607/jester/jester_cf.csv")
+plot(jester[,1],jester[,2], xlab="Joke #1 Ratings", ylab="Joke #2 Ratings")
+sim(jester[,1],jester[,2])
+plot(jester[,8],jester[,98], xlab="Joke #8 Ratings", ylab="Joke #98 Ratings")
+sim(jester[,8],jester[,98])
 
+weighted.mean(c(8.2,6.5,5.5,9.0,-4.3),c(0.32,0.21,0.16,0.11,0.07))
+View(jester)
+
+### analysis
+a <- predict_ratings[[3]]
+b <- as.numeric(jester[3,][-which(is.na(jester[3,]))])
+par(mfrow=c(1,2)) 
+hist(a, xlim=)
+hist(b)
+
+max_rating <- max(predict_ratings[[3]])
+max_rating
+which(predict_ratings[[3]] == max_rating)
+jokeID <- names(predict_ratings[[3]])[30]
+jokeID
