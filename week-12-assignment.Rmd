@@ -1,0 +1,138 @@
+---
+title: "DATA607 Week 12 Assignment"
+author: "Jun Yan"
+date: "November 16, 2017"
+output: 
+  html_document:
+    toc: yes
+    toc_float: yes
+---
+
+### Starting Up
+
+In this assignment, I intend to try out `RNeo4j`, a R driver package for Neo4j. The CRAN documentation can be found here: https://cran.r-project.org/web/packages/RNeo4j/RNeo4j.pdf
+
+I will use `RNeo4j` to migrate the small flight and airport data, provided by the class Neo4j Query Lab, to a Neo4j database. 
+
+To reproduce the codes and results of this assignment, the reader must first have a Neo4j database set up and running in the back.
+
+Below code will connect to the Neo4j database. Reader should adjust the username/password.
+
+```{r}
+library(RNeo4j)
+library(knitr)
+graph <- startGraph("http://localhost:7474/db/data/", username = "neo4j", password = "12345")
+```  
+
+Below is an optional step to clear any existing nodes and relations in the database.
+
+```{r}
+clear(graph, input = F)
+```
+
+Let's load the data and examine them.
+
+```{r}
+airports <- read.csv("https://raw.githubusercontent.com/Tyllis/Data607/master/neo4j-airport-csv-raw.csv", stringsAsFactors = F)
+flights <- read.csv("https://raw.githubusercontent.com/Tyllis/Data607/master/neo4j-flight-lab-data.csv", stringsAsFactors = F)
+kable(airports)
+kable(flights)
+```
+
+### Data Migration
+
+First, I will write the query to create airport nodes.
+
+```{r}
+query <- "
+MERGE (:Airport {label:{label_name}, city:{city_name}, state:{state_name}})
+"
+```
+
+To migrate the airport data, I will use a for-loop to go thru each row, retrieve the airport data, and use the `query` above to create cypher query. The `appendCypher` function will collect the cypher query created in each loop into a transaction object.
+
+```{r}
+# Create a transaction object
+t <- newTransaction(graph)
+
+# Append the cypher queries to the transaction object
+for (i in 1:nrow(airports)){
+  appendCypher(t,
+               query,
+               label_name = airports[i,]$label,
+               city_name = airports[i,]$city,
+               state_name = airports[i,]$state)
+}
+
+# Execute the transaction
+commit(t)
+```
+
+The `commit` function will execute the migration.
+
+Similarly, I will now add the flights nodes. I will also add the relations between flights and airports.
+
+```{r}
+query <- "
+MERGE (f:Flight {flight:{flnm}, airline:{alnm}, capacity:{cpct}})
+WITH f
+MATCH (a:Airport {label:{depart}}), (c:Airport {label:{arrive}}) 
+CREATE (a) -[:DEPART {takeoff:{tkof}}]-> (f) -[:ARRIVE {landing:{ldng}}]-> (c)
+"
+
+t <- newTransaction(graph)
+
+for (i in 1:nrow(flights)){
+  appendCypher(t,
+               query,
+               flnm = flights[i,]$flight,
+               alnm = flights[i,]$airline,
+               cpct = flights[i,]$capacity,
+               tkof = flights[i,]$takeoff,
+               ldng = flights[i,]$landing,
+               depart = flights[i,]$depart ,
+               arrive = flights[i,]$arrive)
+}
+
+commit(t)
+```
+
+### Checking Results
+
+We can now check the migration result in the browser.
+
+```{r}
+browse(graph, viewer = T)
+```
+
+Setting `viewer = F` will open the graph in the default browser; otherwise, it will be opened in R's viewer pane.
+
+Calling MATCH (n) RETURN (n) will return the following visual representation of the graph:
+
+![](https://raw.githubusercontent.com/Tyllis/Data607/master/airport-flight-graph.PNG)
+
+To further verify the migration, we can write queries and use `cypher` function to retrieve the data from the Neo4j database and turn into a data.frame object in R.
+
+Below query will match and return any nodes with Airport tag.
+
+```{r}
+query <- "
+MATCH (a:Airport)
+RETURN a.label, a.city, a.state
+"
+kable(cypher(graph, query))
+```
+
+Below query will match and return the flight data, by looking at the relations between airports and flights.
+
+```{r}
+query <- "
+MATCH (a:Airport) -[b:DEPART]-> (c:Flight) -[d:ARRIVE]-> (e:Airport)
+RETURN c.flight, c.airline, a.label AS depart, e.label AS arrive, c.capacity, b.takeoff, d.landing
+ORDER BY c.flight
+"
+kable(cypher(graph, query))
+```
+
+As you can see, the two tables are identical to the csv files we imported earlier. The migration is successful.
+
