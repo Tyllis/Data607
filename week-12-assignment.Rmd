@@ -18,7 +18,7 @@ To reproduce the codes and results of this assignment, the reader must first hav
 
 Below code will connect to the Neo4j database. Reader should adjust the username/password.
 
-```{r}
+```{r warning=F, message=F}
 library(RNeo4j)
 library(knitr)
 graph <- startGraph("http://localhost:7474/db/data/", username = "neo4j", password = "12345")
@@ -33,8 +33,8 @@ clear(graph, input = F)
 Let's load the data and examine them.
 
 ```{r}
-airports <- read.csv("https://raw.githubusercontent.com/Tyllis/Data607/master/neo4j-airport-csv-raw.csv", stringsAsFactors = F)
-flights <- read.csv("https://raw.githubusercontent.com/Tyllis/Data607/master/neo4j-flight-lab-data.csv", stringsAsFactors = F)
+airports <- read.csv("https://raw.githubusercontent.com/Tyllis/Data607/master/neo4j-airport-csv-raw.csv", stringsAsFactors=F)
+flights <- read.csv("https://raw.githubusercontent.com/Tyllis/Data607/master/neo4j-flight-lab-data.csv", stringsAsFactors=F)
 kable(airports)
 kable(flights)
 ```
