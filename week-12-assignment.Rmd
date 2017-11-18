@@ -136,3 +136,4 @@ kable(cypher(graph, query))
 
 As you can see, the two tables are identical to the csv files we imported earlier. The migration is successful.
 
+The advantage of storing the data in a graph-based database such as Neo4j is that the search can be done through relationship-based query, as demonstrated above. These searches can be very fast. The disadvantage is that importing/uploading a large volume of data can be slow. 
