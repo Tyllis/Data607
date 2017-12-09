@@ -1,0 +1,40 @@
+1997_T11_32.xlsx
+1998_t12_32.xlsx
+1999_t12_32.xlsx
+2000_t12_32.xls
+2001_t12_32.xlsx
+2002_Table 13 Transit Operating Expenses by Mode and Object Class.xlsx
+2003_Table 13  Transit Operating Expenses by Mode and Object Class.xlsx
+2004_Table 13 - Transit Operating Expenses by Mode and Object Class.xlsx
+2005_Table_13.xlsx
+2006_Table 13 -Transit Operating Expenses by Mode, Type of Service and Object Class.xlsx
+2007_Table_13.xlsx
+2008_T13_Op_Exp_Mode_Class.xlsx
+2009_T13_Op_Exp_Mode_Class.xlsx
+2010_T13_Op_Exp_Mode_Class.xlsx
+2011_T13_Op_Exp_Mode_Class.xlsx
+2012 Table 13 OE by mode.xlsx
+2013 Table 13 OE by Mode_0.xlsx
+2014 Table 13 OE by Mode_0.xls
+Operating Expenses_0.xlsm
+OperatingExpenses.xlsm
+1997_T14_32.xlsx
+1998_t15_32.xlsx
+1999_t15_32.xlsx
+2000_t15_32.xls
+2001_t15_32.xlsx
+2002_Table 16 Revenue Vehicle Maintenance Performance - Directly Operated Service.xlsx
+2003_Table 16  Revenue Vehicle Maintenance Performance.xlsx
+2004_Table 16 - RVI Maintenance Performance.xlsx
+2005_Table_16.xlsx
+2006_Table 16 - Revenue Vehicle Maintenance Performance  Directly Operated Service.xlsx
+2007_Table_16.xlsx
+2008_T16_RVI_Maintenanace_Performance.xlsx
+2009_T16_RVI_Maintenanace_Performance.xlsx
+2010_T16_RVI_Maintenanace_Performance.xlsx
+2011_T16_RVI_Maintenanace_Performance.xlsx
+2012 Table 16 RVI Maintenance Performance.xlsx
+2013 Table 16 RVI Maint Performance.xlsx
+2014 Table 16 Revenue Vehicle Maint Performance_2 (1).xls
+Breakdowns.xlsm
+Breakdowns_0.xlsm
