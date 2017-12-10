@@ -1,0 +1,656 @@
+---
+title: "DATA607 - How Data Driven Decisions Can Save New York's Subways"
+author: "Jun Yan"
+date: "December 8, 2017"
+output: 
+  html_document:
+    code_folding: hide
+    toc: yes
+    toc_float: yes
+    toc_depth: 5
+---
+
+### Introduction
+
+New York City Transit Authority (NYCT) is the largest public transit authority in the US. NYCT's subway system serves about 8 million riders each day, according to the data on Metropolitan Transit Authority's [official website](http://web.mta.info/nyct/facts/ffintro.htm). For most New Yorkers, it is the primary way of getting around in the city. In recent years, the quality of service on the NYCT's subways has drastically deteriorated, prompting numerous public inquiries. On November 18, 2017, New York Times published a [report](https://www.nytimes.com/2017/11/18/nyregion/new-york-subway-system-failure-delays.html) that tried to explain the reasons behind the decline. Among the many culprits listed, New York Times pointed out that NYCT has diverted maintenance funds to support more flashy capital projects, such as the 2nd Avenue subway line. Also, the report disclosed that NYCT's leadership, given concession to the unions, has allowed the salaries to soar. All of which contribute to the budget crunch that led to the degradation of the subway services.
+
+This project is a an attempt to dive deeper into the issue, using the same data that the New York Times has used in their report. These are the data opened to public access, provided through two portals:
+
+- [Metropolitan Transportation Authority's Data Feed](http://web.mta.info/developers/developer-data-terms.html#data)
+- [National Transit Database](https://www.transit.dot.gov/ntd/ntd-data)
+
+With these data, we seek to discover the extent of degradation in NYCT's subway services. Moreover, Using a data driven approach, this project explores a preliminary frame work that may be used to find a solution for NYCT's predicament, particularly in the area of funding allocation. 
+
+```{r load_packages, warning=F, message=F}
+library(ggplot2)
+library(gdata)
+library(stringr)
+library(dplyr)
+library(tidyr)
+library(knitr)
+library(kableExtra)
+library(gridExtra)
+```
+
+
+### Just How Bad Is It?
+
+In this section, we explore MTA's "Performance Data" to see just how bad the NYCT's subway service has degraded. As of the date of this report, the "Performance Data" was last updated on November, 2017. The data package can be downloaded from MTA's data portal, and contains several csv files, each for one of the MTA's child agency, such as the Long Island Railroad, the Metro North Railroad, etc. The data file of interest here is the "MTA_Performance_NYCT.csv", which holds the performance measurement for the NYCT's subway and buses from 2008 to 2017. This [link](http://web.mta.info/developers/performance.html) lists all of the performance metrics. For the subway, we are interested in four metrics:
+
+- On-Time Performance, total and for all lines
+- Subway wait assessment for all lines
+- Mean Distance Between Failure
+- Total Ridership
+
+The csv file can be downloaded directly from MTA's data portal.
+
+```{r load_mta, warning=F, message=F}
+# Import MTA files
+temp <- tempfile()
+download.file("http://web.mta.info/persdashboard/perxml/MTA_Performance_Datall.zip", temp)
+nyct_perf <- read.csv(unz(temp, "MTA_Performance_NYCT.csv"), stringsAsFactors = F)
+unlink(temp)
+```
+
+The description for the performance metrics can be read from a spreadsheet file stored on the MTA's website. 
+
+```{r metrics, warning=F, message=F}
+# Read description for the metrics
+temp <- read.xls("http://web.mta.info/developers/Performance_Indicators_by%20Agency.xls", sheet = 1, header=F)
+temp <- temp %>% 
+  filter(V1 %in% c("On-Time Performance (Absolute) - Subways", "Wait Assessment - Subways", 
+                   "Mean Distance Between Failures - Subways", "Total Ridership - Subways"))
+names(temp) <- c("PERFORMANCE_INDICATOR", "DESCRIPTION")
+kable(temp, row.names = F)
+```
+
+Note that the On-Time Performance (OTP) and the Subway Wait Assessment metrics are in percentage, and can be broken down into each subway line. 
+
+```{r}
+# The indicator names of the OTP and wait assessment can be pulled from the data frame using the `stringr` package.
+otp_names <- nyct_perf$INDICATOR_NAME %>% 
+  str_extract(pattern = "OTP[[:graph:]\\s]*") %>% 
+  .[!is.na(.)] %>% 
+  unique()
+otp_names
+wa_names <- nyct_perf$INDICATOR_NAME %>% 
+  str_extract(pattern = "Subway Wait Assessment -[[:graph:]\\s]*") %>% 
+  .[!is.na(.)] %>% 
+  unique()
+wa_names
+```
+
+We can create plots to inspect the performance of each subway line. The 3 "S" lines are excluded since these lines are missing a number of data. 
+
+```{r slopechart_setup, warning=F, message=FALSE}
+# Below two functions, `tufte_sort` and `plot_slopegraph` are copied from source: https://github.com/jkeirstead/r-slopegraph
+tufte_sort <- function(df, x="year", y="value", group="group", method="tufte", min.space=0.05) {
+  ## First rename the columns for consistency
+  ids <- match(c(x, y, group), names(df))
+  df <- df[,ids]
+  names(df) <- c("x", "y", "group")
+  
+  ## Expand grid to ensure every combination has a defined value
+  tmp <- expand.grid(x=unique(df$x), group=unique(df$group))
+  tmp <- merge(df, tmp, all.y=TRUE)
+  df <- mutate(tmp, y=ifelse(is.na(y), 0, y))
+  
+  ## Cast into a matrix shape and arrange by first column
+  require(reshape2)
+  tmp <- dcast(df, group ~ x, value.var="y")
+  ord <- order(tmp[,2])
+  tmp <- tmp[ord,]
+  
+  min.space <- min.space*diff(range(tmp[,-1]))
+  yshift <- numeric(nrow(tmp))
+  ## Start at "bottom" row
+  ## Repeat for rest of the rows until you hit the top
+  for (i in 2:nrow(tmp)) {
+    ## Shift subsequent row up by equal space so gap between
+    ## two entries is >= minimum
+    mat <- as.matrix(tmp[(i-1):i, -1])
+    d.min <- min(diff(mat))
+    yshift[i] <- ifelse(d.min < min.space, min.space - d.min, 0)
+  }
+  
+  tmp <- cbind(tmp, yshift=cumsum(yshift))
+  
+  scale <- 1
+  tmp <- melt(tmp, id=c("group", "yshift"), variable.name="x", value.name="y")
+  ## Store these gaps in a separate variable so that they can be scaled ypos = a*yshift + y
+  
+  tmp <- transform(tmp, ypos=y + scale*yshift)
+  return(tmp)
+  
+}
+plot_slopegraph <- function(df) {
+  ylabs <- subset(df, x==head(x,1))$group
+  yvals <- subset(df, x==head(x,1))$ypos
+  fontSize <- 3
+  gg <- ggplot(df,aes(x=x,y=ypos)) +
+    geom_line(aes(group=group),colour="grey80") +
+    geom_point(colour="white",size=8) +
+    geom_text(aes(label=y), size=fontSize, family="American Typewriter") +
+    scale_y_continuous(name="", breaks=yvals, labels=ylabs) +
+    theme_classic()
+  return(gg)
+}    
+
+# Below function is a slight modification of the code from http://r-statistics.co/Top50-Ggplot2-Visualizations-MasterList-R-Code.html#Slope%20Chart%202
+createSlopPlot <- function(df, title){
+
+  df <- tufte_sort(df, 
+                   x="PERIOD_YEAR", 
+                   y="YTD_ACTUAL", 
+                   group="INDICATOR_NAME", 
+                   method="tufte", 
+                   min.space=0.05)
+  
+  df <- transform(df, 
+                  x=factor(x, levels=c(2009:2016), 
+                           labels=c(2009:2016)), 
+                  y=round(y))
+  
+  plot <- plot_slopegraph(df) + labs(title=title) + 
+    theme(axis.title=element_blank(),
+          axis.ticks = element_blank(),
+          plot.title = element_text(hjust=0.5,
+                                    family = "American Typewriter",
+                                    face="bold"),
+          axis.text = element_text(family = "American Typewriter",
+                                   face="bold"))
+  
+  return(plot)
+}
+
+## Construct the plots
+otp <- nyct_perf %>% 
+  # Select the OTP rows based on the indicator names
+  filter(INDICATOR_NAME %in% otp_names[-c(8, 15, 23)]) %>% 
+  # Select the month of December only, since we will be using the "YTD_ACTUAL" year-to-date column.
+  filter(PERIOD_MONTH == 12)
+# Shorten the indicator names
+otp$INDICATOR_NAME <- str_replace_all(otp$INDICATOR_NAME, "OTP \\(Terminal\\) - ", "")
+otp_names <- str_replace_all(otp_names, "OTP \\(Terminal\\) - ", "")
+# Separate the rows into number lines and letter lines
+temp1 <- filter(otp, INDICATOR_NAME %in% otp_names[c(1:7)])
+temp2 <- filter(otp, INDICATOR_NAME %in% otp_names[c(9:14, 16:22)])
+# Construct plots
+grid.arrange(createSlopPlot(temp1, "% On-Time for NYCT Number Lines"), 
+             createSlopPlot(temp2, "% On-Time for NYCT Letter Lines"),ncol=2)
+```
+
+The on-time performance for all lines has been declining steadily. The 2, 4, 5, and 6 lines are particularly bad, having the steepest decline and the lowest on-time percentage.
+
+```{r create_plot_wa, warning=F, message=F}
+wa <- nyct_perf %>% 
+  filter(INDICATOR_NAME %in% wa_names[-c(8, 16, 23)]) %>% 
+  filter(PERIOD_MONTH == 12)
+wa$INDICATOR_NAME <- str_replace_all(wa$INDICATOR_NAME, "Subway Wait Assessment - ", "")
+wa_names <- str_replace_all(wa_names, "Subway Wait Assessment - ", "")
+temp1 <- filter(wa, INDICATOR_NAME %in% wa_names[c(1:7)])
+temp2 <- filter(wa, INDICATOR_NAME %in% wa_names[c(9:15, 17:22)])
+
+grid.arrange(createSlopPlot(temp1, "Wait Assessment for Number Lines"), 
+             createSlopPlot(temp2, "Wait Assessment for Letter Lines"),ncol=2)
+```
+
+The subway wait assessment paints a better picture for NYCT, although the declining trend remains true. It is important to note the difference between these two performance metrics. As explained in the description for these metrics, the OTP measures the on-time performance of a train making all stops and arriving at the final station on time. The subway wait assessment, on the other hand, measures the on-time performance of trains in randomly sampled stations throughout the line. OTP can be thought of as a metric that represents the cumulative effect of train delays along the line. If a train line is long, having more stations than others, it is more likely for that line to have lower OTP than others. Therefore the subway wait assessment is a better measurement for everyday commuters, since commuters usually do not care if a train arrives at its last station on-time or not, but do care about if the trains between the origin and destination stations are running on-time. However, MTA does not document its sampling methodology for the subway wait assessment. So it's difficult to talk about how useful this metric is.
+
+```{r ridership_failure_distance, warning=F, message=F}
+rd <- nyct_perf %>% 
+  filter(INDICATOR_NAME == "Total Ridership - Subways") %>% 
+  filter(PERIOD_MONTH == 12)
+
+fd <- nyct_perf %>% 
+  filter(INDICATOR_NAME == "Mean Distance Between Failures - Subways") %>% 
+  filter(PERIOD_MONTH == 12)
+
+plot1 <- ggplot(rd, aes(x = PERIOD_YEAR, y = YTD_ACTUAL/1000000000, color = INDICATOR_NAME)) +
+  geom_line() +
+  labs(title = "Annual Ridership - Subways", y = "Riders in Billion", x = "Year") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust=0.5), legend.position = "none")
+
+plot2 <- ggplot(fd, aes(x = PERIOD_YEAR, y = YTD_ACTUAL/1000, color = INDICATOR_NAME)) +
+  geom_line() +
+  labs(title = "Mean Failure Distance of Trains", y = "Thousand Miles", x = "Year") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust=0.5), legend.position = "none")
+
+grid.arrange(plot1, plot2, ncol=2)
+```
+
+The annual ridership has increased significantly since 2009, reaching more than 1.75 billion in 2016. The mean failure distance of the trains increased from 2008 to 2011, representing an improvement in the train's performance; but then it began to decline, dropping to pre 2008 level in 2015.
+
+It is apparent from the graphs above that the service performance of NYCT subways has slid over the years. So what can we do about it? The MTA data portal does not provide enough information to answer this question. In the following sections, we turn to the data from the National Transit Database (NTD) in an attempt to answer this question.
+
+
+### Identifying the Issues
+
+The NTD is maintained by the Federal Transit Administration. As required by law since 1974, a public transit authority receiving federal funding assistance must periodically submit its agency data to the NTD. These include the transit agency's financial, operating, and asset condition data. NTD consolidates and publishes these data in a number of time series Excel spreadsheets, publicly accessible on its website. The latest time series files contain annual data from 1991 to 2016. We can import these data files directly.
+
+The first file we would like to import is the "TS3.1 - Capital Expenditures Time-Series" Excel file. We are interested in 3 sheets in this file:
+
+- Funds spent on Rolling Stock
+- Funds spent on Facilities
+- Funds spent on other Capital Projects
+
+```{r ntd_import1, message=F, warning=F}
+url_link <- "http://www.transit.dot.gov/sites/fta.dot.gov/files/TS3.1TimeSeriesUsesofCap_3.xls"
+rs <- read.xls(url_link, sheet = "Rolling Stock", stringsAsFactors = F)
+fa <- read.xls(url_link, sheet = "Facilities", stringsAsFactors = F)
+ot <- read.xls(url_link, sheet = "Other", stringsAsFactors = F)
+```
+
+The second file to import is the "TS2.1 - Service Data and Operating Expenses Time-Series by Mode" Excel file. The sheets being imported into data frame for the analysis are:
+
+- Vehicle Operations Expenses 
+- Vehicle Maintenance Expenses
+- Non-Vehicle Maintenance Expenses
+- General Administration Expenses
+- Unlinked Passenger Trips
+
+```{r ntd_import2, message=F, warning=F}
+url_link <- "http://www.transit.dot.gov/sites/fta.dot.gov/files/TS2.1TimeSeriesOpExpSvcModeTOS_6.xls"
+op <- read.xls(url_link, sheet = "OpExp VO", stringsAsFactors = F)
+ga <- read.xls(url_link, sheet = "OpExp GA", stringsAsFactors = F)
+mv <- read.xls(url_link, sheet = "OpExp VM", stringsAsFactors = F)
+mn <- read.xls(url_link, sheet = "OpExp NVM", stringsAsFactors = F)
+pt <- read.xls(url_link, sheet = "UPT", stringsAsFactors = F)
+```
+
+The two Excels files imported above include the data for all transit agencies and all transit modes (train, bus, etc.) of the agencies in the country. Each row is a mode for a agency. We can extract the row by looking at the "NTD ID" and the "Mode" columns. The NYCT's NTD ID is 2008, and the subway mode is HR, which stands for Heavy Rail.
+
+The extracted rows will be in wide format, where the each year is a column. We would like to transform it into a long format, so that each row is an annual observation of the expenses and trips. 
+
+```{r fun_extractInf}
+# This function takes a data frame object and extract the NYCT subway row, and performs transformation so that the returned data frame is in long format. String columns are also treated with stringr and turned into numeric.
+extractInf <- function(df){
+  df <- df %>% 
+    # Extract NYCT subway row 
+    filter(X4.Digit.NTDID == 2008 & Mode == "HR") %>%
+    # Turn into long format
+    gather("Year", "Amount", X1992:X2016) %>% 
+    select("Year", "Amount")
+  # Change the Year column to numeric format
+  df$Year <- df$Year %>% 
+    str_replace("X", "") %>% 
+    as.numeric()
+  # Clean up the Amount column
+  df$Amount <- df$Amount %>% 
+    str_replace_all(pattern="[$|,]*", replacement="") %>% 
+    as.numeric()
+  return(df)
+}
+
+# Use lapply to aplly the extractInf function to each data frame, and use do.call to combine them into one data frame, also removing the duplicated "Year" columns.
+expenses <- list(op, ga, mv, mn, rs, fa, ot, pt) %>% 
+  lapply(extractInf) %>% 
+  do.call(cbind, .) %>% 
+  .[,-c(3,5,7,9,11,13,15)]
+names(expenses) <- c("Year", "Operation", "General.Admin", "Vehicle.Maint", "NonVeh.Maint",
+                         "Rolling.Stock", "Facilities", "Other.Cap", "Passenger.Trips")
+```
+
+The next two sets of data to be imported are a bit tricky to obtain. They are the mechanical failure record and maintenance spending detail data. The maintenance spending detail breaks down the annual operation and maintenance expense into expense categories such as operator wages, fringe benefit, material and supplies, etc. 
+These are not time series files, so you must get it individually for each year, using NTD's [search](https://www.transit.dot.gov/ntd/ntd-data) engine. These files are also difficult to read automatically. The file names change from year to year, and the table formats also changes from one year to another. It is necessary to download each file and extract the NYCT's data from each file manually. For this project, we have performed this footwork extracting the information. Two csv files were constructed and stored in the git hub repository, which can be read directly. If wish, the readers may download the original raw files using this [link](https://raw.githubusercontent.com/Tyllis/Data607/master/ntd_links.txt), which contains the file names that can be concatenated with "https://www.transit.dot.gov/sites/fta.dot.gov/files/" to create links for automatic download.
+
+We can now create the complete data table. 
+
+```{r ntd_import3, warning=F, message=F}
+# Read the mechanical failure and expense detail csv files
+url_link <- "https://raw.githubusercontent.com/Tyllis/Data607/master/ntd_breakdowns.csv"
+bd <- read.csv(url_link, stringsAsFactors = F)
+url_link <- "https://raw.githubusercontent.com/Tyllis/Data607/master/ntd_maintdetails.csv"
+md <- read.csv(url_link, stringsAsFactors = F)
+
+# Use `left_join` function to join the `expenses` table and the bd, md tables together
+nyct <- expenses %>% 
+  left_join(bd, by = "Year") %>% 
+  left_join(md, by = "Year")
+
+# Create scrollable table box
+kable(nyct, "html") %>% 
+  kable_styling() %>% 
+  scroll_box(height = "400px")
+```
+
+Note that there are some data missing from the expense details and mechanical failure data groups, for years before 1996. These are not available for public access on NTD's website.
+
+The `Major.Failures` and `Minor.Failures` columns are of particular interest. Mechanical failure is one of the main causes for train delay. Below, we plot the two types of failures together, and separately.
+
+```{r plot_failures, warning=F, message=F}
+# Plot mechanical failure
+temp <- nyct %>%
+  select(Year, Major.Failures:Minor.Failures)%>%
+  gather("Exp.Type", "Amount", Major.Failures:Minor.Failures)
+plot1 <- ggplot(temp, aes(x = Year, y = Amount, fill = Exp.Type)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Mechanical Failures", y = "Number of Failures") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust=0.5), legend.title=element_blank()) +
+  scale_x_continuous(breaks = seq(1997,2017, by = 5))
+plot2 <- ggplot(temp, aes(x = Year, y = Amount, color = Exp.Type)) +
+  geom_line() +
+  labs(title = "Mechanical Failures", y = "Number of Failures") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust=0.5), legend.title=element_blank()) +
+  scale_x_continuous(breaks = seq(1997,2017, by = 5))
+grid.arrange(plot1, plot2, ncol=1)
+```
+
+It appears that the `Major.Failures` has remained steady over the years, while the `Minor.Failures` has increased. In the New York Times article, it was suggested that the NYCT's maintenance spending has stagnated over the years, which led to more breakdowns that causes more delay. Let's see if it is true.
+
+```{r plot_maintenance, warning=F, message=F}
+# Plot expense 
+temp <- nyct %>%
+  select(Year, Operation:NonVeh.Maint)%>%
+  gather("Exp.Type", "Amount", Operation:NonVeh.Maint)
+plot1 <- ggplot(temp, aes(x = Year, y = Amount/1000000, fill = Exp.Type)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Operation and Maintenance Expenses", y = "Million USD") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust=0.5), legend.title=element_blank()) +
+  scale_x_continuous(breaks = seq(1992,2017, by = 5)) +
+  scale_y_continuous(breaks = seq(0, 5000, by = 1000))
+plot2 <- ggplot(temp, aes(x = Year, y = Amount/1000000, color = Exp.Type)) +
+  geom_line() +
+  labs(title = "Operation and Maintenance Expenses", y = "Million USD") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust=0.5), legend.title=element_blank()) +
+  scale_x_continuous(breaks = seq(1992,2017, by = 5)) +
+  scale_y_continuous(breaks = seq(0, 5000, by = 500))
+
+grid.arrange(plot1, plot2, ncol=1)
+```
+
+The graphs above show that the operation and maintenance spending have increased over the years, contrary to the New York Time's claim, although the increase for the maintenance spending is noticeably smaller than other spending.
+
+However, these graphs do not paint the whole picture, because the ridership has increased over the years as well. The `Passenger.Trips` records the annual number of unlinked passenger trips (UPT) the trains have served. The [official definition](https://www.transit.dot.gov/ntd/national-transit-database-ntd-glossary) of UPT is "number of passengers who board public transportation vehicles. Passengers are counted each time they board vehicles no matter how many vehicles they use to travel from their origin to their destination." It is another form of measurement for ridership.
+
+```{r plot_upt}
+temp <- nyct %>% 
+  select(Year, Passenger.Trips) 
+ggplot(temp, aes(x = Year, y = Passenger.Trips/1000000000)) +
+  geom_line() +
+  labs(title = "Unlinked Passenger Trips", y = "Billion Trips") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust=0.5), legend.title=element_blank()) +
+  scale_x_continuous(breaks = seq(1992,2017, by = 5)) +
+  scale_y_continuous(breaks = seq(0, 3, by = 0.25))
+```
+
+To tell if the expenses have fallen behind the rise in ridership, we have to normalize the expenses against the ridership. Here, we divide the expenses by the unlinked passenger trips. It is a better measurement to tell if the rise in expenses have kept up with the rise in ridership. From this point on, we will use the normalized metrics, all obtained by dividing the original data by the unlinked passenger trips corresponding to the data.
+
+Below, we reconstruct the graphs for the operation and maintenance expenses, using the normalized metric.
+
+```{r plot_maintenance2}
+# Normalized the spending data by dividing by the passenger trips
+nyct_normal <- nyct / nyct$Passenger.Trips
+nyct_normal$Year <- nyct$Year
+
+# Plot maintenance expense 
+temp <- nyct_normal %>%
+  select(Year, Operation:NonVeh.Maint)%>%
+  gather("Exp.Type", "Amount", Operation:NonVeh.Maint)
+plot1 <- ggplot(temp, aes(x = Year, y = Amount, fill = Exp.Type)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Operation and Maintenance Expenses", y = "USD per Passenger Trip") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust=0.5), legend.title=element_blank()) +
+  scale_x_continuous(breaks = seq(1992,2017, by = 5)) 
+plot2 <- ggplot(temp, aes(x = Year, y = Amount, color = Exp.Type)) +
+  geom_line() +
+  labs(title = "Operation and Maintenance Expenses", y = "USD per Passenger Trip") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust=0.5), legend.title=element_blank()) +
+  scale_x_continuous(breaks = seq(1992,2017, by = 5)) 
+
+grid.arrange(plot1, plot2, ncol=1)
+```
+
+The new graphs show that the vehicle maintenance expense has, relatively, kept leveled with the ridership over the years; while the expenses for non-Vehicle maintenance, general administration have increased. 
+
+NTD also offers a different breakdown of operation and maintenance spending, into following categories:
+
+- Operator Wage
+- Other Wage
+- Fringe Benefit
+- Services
+- Fuel and Lube
+- Tires and Other
+- Utilities
+- Casualty and Liability
+- Other
+- Expense Transfer
+
+The `Expense.Transfer` are the adjustment made to the other expense categories. Not knowing which categories were adjusted, this variable is excluded in the analysis. 
+
+The breakdowns of the operation and maintenance spendings are plotted below.
+
+```{r plot_maintenance3, warning=F, message=F}
+temp <- nyct_normal %>%
+  select(Year, Operator.Wage:Other)%>%
+  gather("Exp.Type", "Amount", Operator.Wage:Other)
+plot1 <- ggplot(temp, aes(x = Year, y = Amount, fill = Exp.Type)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Operation and Maintenance Expenses", y = "USD per Passenger Trip") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust=0.5), legend.title=element_blank()) +
+  scale_x_continuous(breaks = seq(1997,2017, by = 5)) 
+plot2 <- ggplot(temp, aes(x = Year, y = Amount, color = Exp.Type)) +
+  geom_line() +
+  labs(title = "Operation and Maintenance Expenses", y = "USD per Passenger Trip") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust=0.5), legend.title=element_blank()) +
+  scale_x_continuous(breaks = seq(1997,2017, by = 5)) 
+
+grid.arrange(plot1, plot2, ncol=1)
+```
+
+The `Fringe.Benefit` and `Other.Wage`, which are the wages paid to maintenance works, administrative personnel, and managers, are by far the largest operating and maintenance expenses. In 2016, together, they were `r round((nyct$Other.Wage[25] + nyct$Fringe.Benefit[25]) / sum(nyct[25,12:21]),2)*100`% of NYCT's total operating and maintenance expense. In particular, `Fringe.Benefit` really took off after 2007, passing over `Other.Wage` to become the number one cost in this spending category.
+
+Below, we construct the graphs for the capital spending.
+
+```{r plot_capspend, warning=F, message=F}
+# Plot capital spending
+temp <- nyct_normal %>%
+  select(Year, Rolling.Stock:Other.Cap)%>%
+  gather("Exp.Type", "Amount", Rolling.Stock:Other.Cap)
+plot1 <- ggplot(temp, aes(x = Year, y = Amount, fill = Exp.Type)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Capital Expense by Type", y = "USD per Passenger Trip") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust=0.5), legend.title=element_blank()) +
+  scale_x_continuous(breaks = seq(1992,2017, by = 5)) +
+  scale_y_continuous(breaks = seq(0, 3500, by = 500))
+plot2 <- ggplot(temp, aes(x = Year, y = Amount, color = Exp.Type)) +
+  geom_line() +
+  labs(title = "Capital Expense by Type", y = "USD per Passenger Trip") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust=0.5), legend.title=element_blank()) +
+  scale_x_continuous(breaks = seq(1992,2017, by = 5)) +
+  scale_y_continuous(breaks = seq(0, 3500, by = 500))
+grid.arrange(plot1, plot2, ncol=1)
+```
+
+There are couple things worthy of mention on this graph. First, the `Rolling.Stock` capital spending is small comparing to other two spending categories. Rolling stock procurement refers to the purchase of trains and rail equipment. `Facilities` refers to spendings on the subway stations and NYCT owned buildings and structures. `Facilities` spending is by far the largest capital spending. 
+
+In this section, the graphs we constructed seem to suggest that there are some questionable trends in NYCT's spending decisions. But are these fund allocations affecting the performance? In the next section, we will attempt to answer this question.
+
+
+### Solutions Through Linear Modeling
+
+We now move forward to ask this question, "Can the NYCT's spending decision affect maintenance performance?" Here, we propose a frame work to test and check if the spending has any relationship with the performance. Namely, we will create a number of linear regression models, using normalized mechanical failures as the target response variable, and the normalized expenses as the explanatory variables. We will check to see if the slope of the linear line is significant. Using an alpha level of 0.05, we check if the p-value is less than the alpha level, so we can reject the null hypothesis that the slope is zero. A slope of zero means that there is no relationship between the expense and the mechanical failures.  
+
+Since the mechanical failures data is only available from 1997 to 2016, any explanatory variables data prior to 1997 are excluded. Also, to simplify the analysis, we sum up the major and minor failure types to create a new variable `Total.Failures`. 
+
+```{r}
+# Select rows with year later than 1996
+nyct_lm <- filter(nyct_normal, Year > 1996)
+# Calculate the total number of mechanical failures per 1 million passenger trips
+nyct_lm$Total.Failures <- (nyct_lm$Major.Failures + nyct_lm$Minor.Failures) * 1000000
+```
+
+Below is a scatter plot matrix, pairing up the capital expenses with the new failure variable. In the upper panel of the matrix, we calculate the Pearson Correlation Coefficients between the variables. In the diagonal panel, the histograms for the variables are shown.
+
+```{r scatter_matrix1}
+# Following two functions, panel.cor and panel.hist, were based on a stackoverflow post.
+# https://stackoverflow.com/questions/15271103/how-to-modify-this-correlation-matrix-plot
+panel.cor <- function(x, y, digits = 2, prefix = "", cex.cor, ...)
+{
+    usr <- par("usr"); on.exit(par(usr))
+    par(usr = c(0, 1, 0, 1))
+    r <- abs(cor(x, y, use = "complete.obs"))
+    txt <- format(c(r, 0.123456789), digits = digits)[1]
+    txt <- paste0(prefix, txt)
+    if(missing(cex.cor)) cex.cor <- 0.8/strwidth(txt)
+    text(0.5, 0.5, txt)
+}
+
+panel.hist <- function(x, ...)
+{
+    usr <- par("usr"); on.exit(par(usr))
+    par(usr = c(usr[1:2], 0, 1.5) )
+    h <- hist(x, plot = FALSE)
+    breaks <- h$breaks; nB <- length(breaks)
+    y <- h$counts; y <- y/max(y)
+    rect(breaks[-nB], 0, breaks[-1], y, col = "cyan", ...)
+}
+
+# Construct the scattplot matrix
+temp <- nyct_lm %>% 
+  select(Total.Failures, Rolling.Stock : Other.Cap)
+pairs(temp, upper.panel = panel.cor, diag.panel = panel.hist)
+```
+
+The plot matrix shows that the `Total.Failures` has a high correlation with `Other.Cap`. Next, we create a function that can perform the linear regression and construct a summary table. We can use this function repeatedly.
+
+```{r calLm_function}
+# This function takes the reponse variable as a string, and the explanatory variables as a vector of strings. The function performs linear regression with each variable individually, and returns a data frame object containing the intercepts, slopes and p-values of each linear model.
+calLm <- function(response, explain, data = nyct_lm){
+  
+  formula_vec <- paste(response, explain, sep = " ~ ")
+  intercepts <- rep(NA, length(explain))
+  slopes <- rep(NA, length(explain))
+  p_vals <- rep(NA, length(explain))
+  adj_rsq <- rep(NA, length(explain))
+  
+  for (i in 1:length(explain)){
+    temp <- lm(as.formula(formula_vec[i]), data = data)
+    summary_temp <- summary(temp)
+    intercepts[i] <- round(summary_temp$coefficients[1,1],4)
+    slopes[i] <- round(summary_temp$coefficients[2,1], 4)
+    p_vals[i] <- round(summary_temp$coefficients[2,4], 4)
+    adj_rsq[i] <- round(summary_temp$adj.r.squared, 4)
+  }
+  
+  df <- data.frame(Model = formula_vec, Intercept = intercepts, Slope = slopes, 
+                   `Adj R Squared` = adj_rsq, `P Value` = p_vals)
+  return(df)
+}
+
+# Construct table
+temp <- calLm("Total.Failures", c("Rolling.Stock", "Facilities", "Other.Cap"), data = nyct_lm)
+kable(temp, "html") %>% 
+  kable_styling(full_width = F, position = "left")
+```
+
+The table shows that only the `Other.Cap` variable has a slope that has a p-value lower than the alpha level of 0.05. We can plot the scatter plot and the linear model line below. The negative slope suggests that increase the `Other.Cap` spending will lower the number of mechanical failures.
+
+```{r plot_lm_othercap}
+par(mfrow = c(1,2))
+xlab <- "Other Capital Spending (USD per UPT)"
+ylab <- "Mechanical Failures (per Million UPT)"
+plot(Total.Failures ~ Other.Cap, data = nyct_lm, xlab = xlab, ylab = ylab)
+abline(lm(Total.Failures ~ Other.Cap, data = nyct_lm))
+```
+
+The definition of "Other Capital Projects", according to NTD's [glossary](https://www.transit.dot.gov/ntd/national-transit-database-ntd-glossary), is:
+
+"Any item not described as guideway, passenger stations, administrative buildings, maintenance buildings, revenue vehicles, service vehicles, fare revenue collection equipment or systems including: 
+- Furniture and equipment that are not an integral part of buildings and structures; and
+- Shelters, signs and passenger amenities (e.g., benches) not in passenger stations."
+
+How this help reduces the total failure is not clear. This information is not helpful until after taking a deeper look at the breakdown of the `Other.Cap`. 
+
+For now, let us turn to the operating and maintenance expenses. We again begin with a scatter plot matrix, follow by a table summarizing the estimates of the linear models.
+
+```{r expense_lms}
+# Construct the scattplot matrix
+temp <- nyct_lm %>% 
+  select(Total.Failures, Operation : NonVeh.Maint)
+pairs(temp, upper.panel = panel.cor, diag.panel = panel.hist)
+
+# Construct summary table
+expense_lm <- calLm("Total.Failures", c("Operation","General.Admin","Vehicle.Maint","NonVeh.Maint"), data = nyct_lm)
+kable(expense_lm, "html") %>% 
+  kable_styling(full_width = F, position = "left")
+```
+
+The `Operation` and `Vehicle.Maint` variables are significant. Again, the slopes are negative, suggesting that increase spending in operation and vehicle maintenance reduce the mechanical failures. 
+
+```{r}
+par(mfrow = c(1,2))
+xlab <- "Operation Expense (USD per UPT)"
+ylab <- "Mechanical Failures (per Million UPT)"
+plot(Total.Failures ~ Operation, data = nyct_lm, xlab = xlab, ylab = ylab)
+abline(lm(Total.Failures ~ Operation, data = nyct_lm))
+xlab <- "Vehicle Maintenance (USD per UPT)"
+plot(Total.Failures ~ Vehicle.Maint, data = nyct_lm, xlab = xlab, ylab = ylab)
+abline(lm(Total.Failures ~ Vehicle.Maint, data = nyct_lm))
+```
+
+In particular, the slope for `Vehicle.Maint` has a steeper slope, suggesting that it has a larger effect on reducing the number of mechanical failures. Moreover, the linear model puts a figure on how much we can reduce the total mechanical failures. The slope for `Vehicle.Maint` suggests that for each additional 1 million USD spend on vehicle maintenance, NYCT would reduce the number of mechanical failures by `r round(abs(expense_lm$Slope[3]))`.  
+
+We now use a different break down of the operation and maintenance expenses, using categories such as `Fringe.Benefit`, `Operator.Wage`, etc. We would like to see how the spending in these categories affect the number of mechanical failures.
+
+```{r expense_detail_lm}
+temp <- nyct_lm %>% 
+  select(Total.Failures, Operator.Wage : Other)
+pairs(temp, upper.panel = panel.cor, diag.panel = panel.hist)
+exp_detail <- calLm("Total.Failures", c("Operator.Wage","Other.Wage","Fringe.Benefit","Services","Fuel.Lube",
+                               "Tires.Other","Utilities","Casualty.Liability","Other"), data = nyct_lm)
+kable(exp_detail, "html") %>% 
+  kable_styling(full_width = F, position = "left")
+```
+
+The significant explanatory variables are `Fringe.Benefit`, `Fuel.Lube`, `Services`, and `Utilities`. 
+
+```{r}
+par(mfrow = c(1,2))
+xlab <- "Fringe Benefit (USD per UPT)"
+ylab <- "Mechanical Failures (per Million UPT)"
+plot(Total.Failures ~ Fringe.Benefit, data = nyct_lm, xlab = xlab, ylab = ylab)
+abline(lm(Total.Failures ~ Fringe.Benefit, data = nyct_lm))
+xlab <- "Fuel and Lube Expenses (USD per UPT)"
+plot(Total.Failures ~ Fuel.Lube, data = nyct_lm, xlab = xlab, ylab = ylab)
+abline(lm(Total.Failures ~ Fuel.Lube, data = nyct_lm))
+xlab <- "3rd Party Services (USD per UPT)"
+plot(Total.Failures ~ Services, data = nyct_lm, xlab = xlab, ylab = ylab)
+abline(lm(Total.Failures ~ Services, data = nyct_lm))
+xlab <- "Utilities (USD per UPT)"
+plot(Total.Failures ~ Utilities, data = nyct_lm, xlab = xlab, ylab = ylab)
+abline(lm(Total.Failures ~ Utilities, data = nyct_lm))
+```
+
+There are few interesting discoveries. The `Services` expense category, which are the payments made to 3rd party contractors, has a positive slope. Without further research, we can only speculate that this may be because more mechanical breakdown leads to more 3rd party services being ordered to repair or supplement the service. The relatively small adjusted R squared for this variable also suggests that the variable only explains a small portion of the variation.
+
+Further, notice the large slope for `Fuel.Lube`. This translates to that each 1 million USD additional spending in `Fuel.Lube` reduces the number of mechanical failure by `r round(abs(exp_detail$Slope[5]))`. Consider that `Fuel.Lube` is only a small fraction of the total operating and maintenance expense, there may be room for improvement. However, we must also consider practicality - the `Fuel.Lube` expenses may be capped by the service load of the trains and equipment. Additional funds in this category may be hard to justified.
+
+In summary, the linear models constructed above suggest that the spending increases in the following expense categories, ranked in the order of effectiveness, can reduce the number of mechanical failures in the system, which may lead to service improvement:
+
+- Fuel and Lube
+- Utilities
+- Vehicle Maintenance
+- Other Capital Projects
+- Operation
+- Fringe Benefit
+
+
+### Conclusion
+
+In this project, we explored the data provided by MTA to gauge just how bad the NYCT's subway services have degraded over the years. We extracted data from NTD to identify the issues underlying NYCT's spending decisions. Moreover, we created a preliminary frame work, using linear regression models, to recommend spending allocations that can help to increase the subway performance by reducing the number of mechanical failures in the system.
+
+It is important to stress that this project is only a preliminary look into how a data driven model can help address the issues in NYCT's subway system. There are still much works to be done to validate this method. For instance, thus far we have not performed diagnostics to check the residuals of each model against the explanatory variables and see if any regression assumptions are violated. We have not checked the auto-correlation of the data, to see if there are information not being used within the time-series and if the relationship is spurious. Moreover, by creating multiple linear models, we risk running into the multiple comparison problem, in which a multivariate regression model may be a better approach. For these potential issues, we offer that there are more sophisticated statistical methods that can be applied to adjust the model. At last, it is our hope that the basis established in this project can be of any use for future policy decision making and guidance, leading to more efficient allocation of public funds in the public transportation field.    
