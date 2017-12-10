@@ -19,7 +19,7 @@ This project is a an attempt to dive deeper into the issue, using the same data 
 - [Metropolitan Transportation Authority's Data Feed](http://web.mta.info/developers/developer-data-terms.html#data)
 - [National Transit Database](https://www.transit.dot.gov/ntd/ntd-data)
 
-With these data, we seek to discover the extent of degradation in NYCT's subway services. Moreover, Using a data driven approach, this project explores a preliminary frame work that may be used to find a solution for NYCT's predicament, particularly in the area of funding allocation. 
+With these data, we seek to discover the extent of degradation in NYCT's subway services. Moreover, using a data driven approach, this project explores a preliminary frame work that may be used to find a solution for NYCT's predicament, particularly in the area of funding allocation. 
 
 ```{r load_packages, warning=F, message=F}
 library(ggplot2)
@@ -35,7 +35,7 @@ library(gridExtra)
 
 ### Just How Bad Is It?
 
-In this section, we explore MTA's "Performance Data" to see just how bad the NYCT's subway service has degraded. As of the date of this report, the "Performance Data" was last updated on November, 2017. The data package can be downloaded from MTA's data portal, and contains several csv files, each for one of the MTA's child agency, such as the Long Island Railroad, the Metro North Railroad, etc. The data file of interest here is the "MTA_Performance_NYCT.csv", which holds the performance measurement for the NYCT's subway and buses from 2008 to 2017. This [link](http://web.mta.info/developers/performance.html) lists all of the performance metrics. For the subway, we are interested in four metrics:
+In this section, we explore MTA's "Performance Data" to see just how bad the NYCT's subway service has degraded. As of the date of this report, the "Performance Data" was last updated on November, 2017. The data package can be downloaded from MTA's data portal, and contains several csv files, each for one of the MTA's subagency, such as the Long Island Railroad, the Metro North Railroad, etc. The data file of interest here is the "MTA_Performance_NYCT.csv", which holds the performance measurement for the NYCT's subway and buses from 2008 to 2017. This [link](http://web.mta.info/developers/performance.html) lists all of the performance metrics. For the subway, we are interested in four metrics:
 
 - On-Time Performance, total and for all lines
 - Subway wait assessment for all lines
@@ -80,7 +80,7 @@ wa_names <- nyct_perf$INDICATOR_NAME %>%
 wa_names
 ```
 
-We can create plots to inspect the performance of each subway line. The 3 "S" lines are excluded since these lines are missing a number of data. 
+The three "S" lines are excluded since these lines are missing a number of data. We can create plots to inspect the performance of each subway line. Here, we use a special type of graph called the "Edward Tufte style slopegraphs", so we can compare the performance changes among the subway lines 
 
 ```{r slopechart_setup, warning=F, message=FALSE}
 # Below two functions, `tufte_sort` and `plot_slopegraph` are copied from source: https://github.com/jkeirstead/r-slopegraph
@@ -226,7 +226,7 @@ The annual ridership has increased significantly since 2009, reaching more than 
 It is apparent from the graphs above that the service performance of NYCT subways has slid over the years. So what can we do about it? The MTA data portal does not provide enough information to answer this question. In the following sections, we turn to the data from the National Transit Database (NTD) in an attempt to answer this question.
 
 
-### Identifying the Issues
+### NTD Data Exploration
 
 The NTD is maintained by the Federal Transit Administration. As required by law since 1974, a public transit authority receiving federal funding assistance must periodically submit its agency data to the NTD. These include the transit agency's financial, operating, and asset condition data. NTD consolidates and publishes these data in a number of time series Excel spreadsheets, publicly accessible on its website. The latest time series files contain annual data from 1991 to 2016. We can import these data files directly.
 
@@ -323,6 +323,7 @@ The `Major.Failures` and `Minor.Failures` columns are of particular interest. Me
 ```{r plot_failures, warning=F, message=F}
 # Plot mechanical failure
 temp <- nyct %>%
+  filter(Year > 1996) %>% 
   select(Year, Major.Failures:Minor.Failures)%>%
   gather("Exp.Type", "Amount", Major.Failures:Minor.Failures)
 plot1 <- ggplot(temp, aes(x = Year, y = Amount, fill = Exp.Type)) +
@@ -374,14 +375,14 @@ temp <- nyct %>%
   select(Year, Passenger.Trips) 
 ggplot(temp, aes(x = Year, y = Passenger.Trips/1000000000)) +
   geom_line() +
-  labs(title = "Unlinked Passenger Trips", y = "Billion Trips") +
+  labs(title = "Unlinked Passenger Trips (UPT)", y = "Billion Trips") +
   theme_minimal() +
   theme(plot.title = element_text(hjust=0.5), legend.title=element_blank()) +
   scale_x_continuous(breaks = seq(1992,2017, by = 5)) +
   scale_y_continuous(breaks = seq(0, 3, by = 0.25))
 ```
 
-To tell if the expenses have fallen behind the rise in ridership, we have to normalize the expenses against the ridership. Here, we divide the expenses by the unlinked passenger trips. It is a better measurement to tell if the rise in expenses have kept up with the rise in ridership. From this point on, we will use the normalized metrics, all obtained by dividing the original data by the unlinked passenger trips corresponding to the data.
+To tell if the expenses have fallen behind the rise in ridership, we have to normalize the expenses against the ridership. Here, we divide the expenses by the unlinked passenger trips. From this point on, we will use the normalized metrics, all obtained by dividing the original data by the unlinked passenger trips corresponding to the data.
 
 Below, we reconstruct the graphs for the operation and maintenance expenses, using the normalized metric.
 
@@ -431,6 +432,7 @@ The breakdowns of the operation and maintenance spendings are plotted below.
 
 ```{r plot_maintenance3, warning=F, message=F}
 temp <- nyct_normal %>%
+  filter(Year > 1996) %>% 
   select(Year, Operator.Wage:Other)%>%
   gather("Exp.Type", "Amount", Operator.Wage:Other)
 plot1 <- ggplot(temp, aes(x = Year, y = Amount, fill = Exp.Type)) +
@@ -463,28 +465,26 @@ plot1 <- ggplot(temp, aes(x = Year, y = Amount, fill = Exp.Type)) +
   labs(title = "Capital Expense by Type", y = "USD per Passenger Trip") +
   theme_minimal() +
   theme(plot.title = element_text(hjust=0.5), legend.title=element_blank()) +
-  scale_x_continuous(breaks = seq(1992,2017, by = 5)) +
-  scale_y_continuous(breaks = seq(0, 3500, by = 500))
+  scale_x_continuous(breaks = seq(1992,2017, by = 5))
 plot2 <- ggplot(temp, aes(x = Year, y = Amount, color = Exp.Type)) +
   geom_line() +
   labs(title = "Capital Expense by Type", y = "USD per Passenger Trip") +
   theme_minimal() +
   theme(plot.title = element_text(hjust=0.5), legend.title=element_blank()) +
-  scale_x_continuous(breaks = seq(1992,2017, by = 5)) +
-  scale_y_continuous(breaks = seq(0, 3500, by = 500))
+  scale_x_continuous(breaks = seq(1992,2017, by = 5))
 grid.arrange(plot1, plot2, ncol=1)
 ```
 
 There are couple things worthy of mention on this graph. First, the `Rolling.Stock` capital spending is small comparing to other two spending categories. Rolling stock procurement refers to the purchase of trains and rail equipment. `Facilities` refers to spendings on the subway stations and NYCT owned buildings and structures. `Facilities` spending is by far the largest capital spending. 
 
-In this section, the graphs we constructed seem to suggest that there are some questionable trends in NYCT's spending decisions. But are these fund allocations affecting the performance? In the next section, we will attempt to answer this question.
+In this section, we explored NTA's data for NYCT's subway system and constructed graphs to dissect NYCT's funding allocations and trends. But are these spending decisions affecting the subway's service performance? In the next section, we will attempt to answer this question.
 
 
-### Solutions Through Linear Modeling
+### Linear Model Solutions
 
-We now move forward to ask this question, "Can the NYCT's spending decision affect maintenance performance?" Here, we propose a frame work to test and check if the spending has any relationship with the performance. Namely, we will create a number of linear regression models, using normalized mechanical failures as the target response variable, and the normalized expenses as the explanatory variables. We will check to see if the slope of the linear line is significant. Using an alpha level of 0.05, we check if the p-value is less than the alpha level, so we can reject the null hypothesis that the slope is zero. A slope of zero means that there is no relationship between the expense and the mechanical failures.  
+We now move forward to propose a frame work that can be used to test and check if the spending has any relationship with the performance. Namely, we will create a number of linear regression models, using normalized mechanical failures as the target response variable, and the normalized expenses as the explanatory variables. The slope of the linear line is checked to see if it is significant. Using an alpha level of 0.05, we check if the p-value is less than the alpha level, so we can reject the null hypothesis that the slope is zero. A slope of zero means that there is no relationship between the expense and the mechanical failures.  
 
-Since the mechanical failures data is only available from 1997 to 2016, any explanatory variables data prior to 1997 are excluded. Also, to simplify the analysis, we sum up the major and minor failure types to create a new variable `Total.Failures`. 
+Since the mechanical failures data is only available from 1997 to 2016, any explanatory variables data prior to 1997 are excluded. Also, to simplify the analysis, major and minor failure types are added together to create a new variable `Total.Failures`. 
 
 ```{r}
 # Select rows with year later than 1996
@@ -493,7 +493,7 @@ nyct_lm <- filter(nyct_normal, Year > 1996)
 nyct_lm$Total.Failures <- (nyct_lm$Major.Failures + nyct_lm$Minor.Failures) * 1000000
 ```
 
-Below is a scatter plot matrix, pairing up the capital expenses with the new failure variable. In the upper panel of the matrix, we calculate the Pearson Correlation Coefficients between the variables. In the diagonal panel, the histograms for the variables are shown.
+Below is a scatter plot matrix, pairing up the capital expenses with the new failure variable. In the upper panel of the matrix, the Pearson Correlation Coefficients between the variables are calculated. In the diagonal panel, the histograms for the variables are shown.
 
 ```{r scatter_matrix1}
 # Following two functions, panel.cor and panel.hist, were based on a stackoverflow post.
@@ -525,7 +525,7 @@ temp <- nyct_lm %>%
 pairs(temp, upper.panel = panel.cor, diag.panel = panel.hist)
 ```
 
-The plot matrix shows that the `Total.Failures` has a high correlation with `Other.Cap`. Next, we create a function that can perform the linear regression and construct a summary table. We can use this function repeatedly.
+The plot matrix shows that the `Total.Failures` has a high correlation with `Other.Cap`. Next, we create a function that can perform the linear regression and construct a summary table. This function will be used repeatedly.
 
 ```{r calLm_function}
 # This function takes the reponse variable as a string, and the explanatory variables as a vector of strings. The function performs linear regression with each variable individually, and returns a data frame object containing the intercepts, slopes and p-values of each linear model.
@@ -557,7 +557,7 @@ kable(temp, "html") %>%
   kable_styling(full_width = F, position = "left")
 ```
 
-The table shows that only the `Other.Cap` variable has a slope that has a p-value lower than the alpha level of 0.05. We can plot the scatter plot and the linear model line below. The negative slope suggests that increase the `Other.Cap` spending will lower the number of mechanical failures.
+The table shows that only the `Other.Cap` variable has a slope that has a p-value lower than the alpha level of 0.05. The scatter plot and the linear regression line are plotted below. The negative slope suggests that increase the `Other.Cap` spending will lower the number of mechanical failures.
 
 ```{r plot_lm_othercap}
 par(mfrow = c(1,2))
@@ -573,9 +573,7 @@ The definition of "Other Capital Projects", according to NTD's [glossary](https:
 - Furniture and equipment that are not an integral part of buildings and structures; and
 - Shelters, signs and passenger amenities (e.g., benches) not in passenger stations."
 
-How this help reduces the total failure is not clear. This information is not helpful until after taking a deeper look at the breakdown of the `Other.Cap`. 
-
-For now, let us turn to the operating and maintenance expenses. We again begin with a scatter plot matrix, follow by a table summarizing the estimates of the linear models.
+How this help reduces the total failure is not clear. This information is not helpful until after taking a deeper look at the breakdown of the `Other.Cap`. For now, let us turn to the operating and maintenance expenses. We again begin with a scatter plot matrix, follow by a table summarizing the estimates of the linear regression models.
 
 ```{r expense_lms}
 # Construct the scattplot matrix
@@ -602,7 +600,7 @@ plot(Total.Failures ~ Vehicle.Maint, data = nyct_lm, xlab = xlab, ylab = ylab)
 abline(lm(Total.Failures ~ Vehicle.Maint, data = nyct_lm))
 ```
 
-In particular, the slope for `Vehicle.Maint` has a steeper slope, suggesting that it has a larger effect on reducing the number of mechanical failures. Moreover, the linear model puts a figure on how much we can reduce the total mechanical failures. The slope for `Vehicle.Maint` suggests that for each additional 1 million USD spend on vehicle maintenance, NYCT would reduce the number of mechanical failures by `r round(abs(expense_lm$Slope[3]))`.  
+In particular, the slope for `Vehicle.Maint` has a steeper slope, suggesting that it has a larger effect on reducing the number of mechanical failures. Moreover, the linear model puts a figure on how much the total mechanical failures can be reduced. The slope for `Vehicle.Maint` suggests that for each additional 1 million USD spend on vehicle maintenance, NYCT can reduce the number of mechanical failures by `r round(abs(expense_lm$Slope[3]))`.  
 
 We now use a different break down of the operation and maintenance expenses, using categories such as `Fringe.Benefit`, `Operator.Wage`, etc. We would like to see how the spending in these categories affect the number of mechanical failures.
 
@@ -635,11 +633,11 @@ plot(Total.Failures ~ Utilities, data = nyct_lm, xlab = xlab, ylab = ylab)
 abline(lm(Total.Failures ~ Utilities, data = nyct_lm))
 ```
 
-There are few interesting discoveries. The `Services` expense category, which are the payments made to 3rd party contractors, has a positive slope. Without further research, we can only speculate that this may be because more mechanical breakdown leads to more 3rd party services being ordered to repair or supplement the service. The relatively small adjusted R squared for this variable also suggests that the variable only explains a small portion of the variation.
+There are few interesting discoveries. The `Services` expense category, which are the payments made to 3rd party contractors, has a positive slope. Without further research and more data to back it up, we can only speculate that this may be because more mechanical breakdown leads to more 3rd party services being ordered to repair or supplement the service. The relatively small adjusted R squared for this variable also suggests that the variable only explains a small portion of the variation.
 
 Further, notice the large slope for `Fuel.Lube`. This translates to that each 1 million USD additional spending in `Fuel.Lube` reduces the number of mechanical failure by `r round(abs(exp_detail$Slope[5]))`. Consider that `Fuel.Lube` is only a small fraction of the total operating and maintenance expense, there may be room for improvement. However, we must also consider practicality - the `Fuel.Lube` expenses may be capped by the service load of the trains and equipment. Additional funds in this category may be hard to justified.
 
-In summary, the linear models constructed above suggest that the spending increases in the following expense categories, ranked in the order of effectiveness, can reduce the number of mechanical failures in the system, which may lead to service improvement:
+In summary, the linear models constructed above suggest that the spending increases in the following expense categories, ranked in the order of descending effectiveness, can reduce the number of mechanical failures in NYCT's subway system, which may lead to service improvement:
 
 - Fuel and Lube
 - Utilities
@@ -653,4 +651,4 @@ In summary, the linear models constructed above suggest that the spending increa
 
 In this project, we explored the data provided by MTA to gauge just how bad the NYCT's subway services have degraded over the years. We extracted data from NTD to identify the issues underlying NYCT's spending decisions. Moreover, we created a preliminary frame work, using linear regression models, to recommend spending allocations that can help to increase the subway performance by reducing the number of mechanical failures in the system.
 
-It is important to stress that this project is only a preliminary look into how a data driven model can help address the issues in NYCT's subway system. There are still much works to be done to validate this method. For instance, thus far we have not performed diagnostics to check the residuals of each model against the explanatory variables and see if any regression assumptions are violated. We have not checked the auto-correlation of the data, to see if there are information not being used within the time-series and if the relationship is spurious. Moreover, by creating multiple linear models, we risk running into the multiple comparison problem, in which a multivariate regression model may be a better approach. For these potential issues, we offer that there are more sophisticated statistical methods that can be applied to adjust the model. At last, it is our hope that the basis established in this project can be of any use for future policy decision making and guidance, leading to more efficient allocation of public funds in the public transportation field.    
+It is important to stress that this project is only a preliminary look into how a data driven model can help address the issues in NYCT's subway system. There are still much works to be done to validate this method. For instance, thus far we have not performed diagnostics to check the residuals of each model against the explanatory variables and see if any regression assumptions are violated. We have not checked the auto-correlation of the data, to see if there are information not being used within the time-series and if the relationship is spurious. Moreover, by creating multiple linear models, we risk running into the multiple comparison problem, in which a multivariate regression model may be a better approach. For these potential issues, we offer that there are more sophisticated statistical methods that can be applied to adjust the model. At last, it is our hope that the basis established in this project can be of any use for future policy decision making and guidance, leading to more efficient allocation of public funds in our public transportation system.    
